@@ -9,38 +9,161 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedOpiekunRouteImport } from './routes/_authenticated/opiekun'
+import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
+import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/_coordinator'
+import { Route as AuthenticatedCoordinatorWizytyRouteImport } from './routes/_authenticated/_coordinator/wizyty'
+import { Route as AuthenticatedCoordinatorSeniorzyRouteImport } from './routes/_authenticated/_coordinator/seniorzy'
+import { Route as AuthenticatedCoordinatorRaportyRouteImport } from './routes/_authenticated/_coordinator/raporty'
+import { Route as AuthenticatedCoordinatorPulpitRouteImport } from './routes/_authenticated/_coordinator/pulpit'
 
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
+  id: '/_authenticated',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedOpiekunRoute = AuthenticatedOpiekunRouteImport.update({
+  id: '/opiekun',
+  path: '/opiekun',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAppRoute = AuthenticatedAppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedCoordinatorRoute =
+  AuthenticatedCoordinatorRouteImport.update({
+    id: '/_coordinator',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedCoordinatorWizytyRoute =
+  AuthenticatedCoordinatorWizytyRouteImport.update({
+    id: '/wizyty',
+    path: '/wizyty',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorSeniorzyRoute =
+  AuthenticatedCoordinatorSeniorzyRouteImport.update({
+    id: '/seniorzy',
+    path: '/seniorzy',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorRaportyRoute =
+  AuthenticatedCoordinatorRaportyRouteImport.update({
+    id: '/raporty',
+    path: '/raporty',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorPulpitRoute =
+  AuthenticatedCoordinatorPulpitRouteImport.update({
+    id: '/pulpit',
+    path: '/pulpit',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/app': typeof AuthenticatedAppRoute
+  '/opiekun': typeof AuthenticatedOpiekunRoute
+  '/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
+  '/raporty': typeof AuthenticatedCoordinatorRaportyRoute
+  '/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRoute
+  '/wizyty': typeof AuthenticatedCoordinatorWizytyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
+  '/app': typeof AuthenticatedAppRoute
+  '/opiekun': typeof AuthenticatedOpiekunRoute
+  '/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
+  '/raporty': typeof AuthenticatedCoordinatorRaportyRoute
+  '/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRoute
+  '/wizyty': typeof AuthenticatedCoordinatorWizytyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
+  '/auth': typeof AuthRoute
+  '/_authenticated/_coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
+  '/_authenticated/app': typeof AuthenticatedAppRoute
+  '/_authenticated/opiekun': typeof AuthenticatedOpiekunRoute
+  '/_authenticated/_coordinator/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
+  '/_authenticated/_coordinator/raporty': typeof AuthenticatedCoordinatorRaportyRoute
+  '/_authenticated/_coordinator/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRoute
+  '/_authenticated/_coordinator/wizyty': typeof AuthenticatedCoordinatorWizytyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/app'
+    | '/opiekun'
+    | '/pulpit'
+    | '/raporty'
+    | '/seniorzy'
+    | '/wizyty'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/auth'
+    | '/app'
+    | '/opiekun'
+    | '/pulpit'
+    | '/raporty'
+    | '/seniorzy'
+    | '/wizyty'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/auth'
+    | '/_authenticated/_coordinator'
+    | '/_authenticated/app'
+    | '/_authenticated/opiekun'
+    | '/_authenticated/_coordinator/pulpit'
+    | '/_authenticated/_coordinator/raporty'
+    | '/_authenticated/_coordinator/seniorzy'
+    | '/_authenticated/_coordinator/wizyty'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
+  AuthRoute: typeof AuthRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,12 +171,109 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/opiekun': {
+      id: '/_authenticated/opiekun'
+      path: '/opiekun'
+      fullPath: '/opiekun'
+      preLoaderRoute: typeof AuthenticatedOpiekunRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/app': {
+      id: '/_authenticated/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AuthenticatedAppRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/_coordinator': {
+      id: '/_authenticated/_coordinator'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedCoordinatorRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/_coordinator/wizyty': {
+      id: '/_authenticated/_coordinator/wizyty'
+      path: '/wizyty'
+      fullPath: '/wizyty'
+      preLoaderRoute: typeof AuthenticatedCoordinatorWizytyRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/_coordinator/seniorzy': {
+      id: '/_authenticated/_coordinator/seniorzy'
+      path: '/seniorzy'
+      fullPath: '/seniorzy'
+      preLoaderRoute: typeof AuthenticatedCoordinatorSeniorzyRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/_coordinator/raporty': {
+      id: '/_authenticated/_coordinator/raporty'
+      path: '/raporty'
+      fullPath: '/raporty'
+      preLoaderRoute: typeof AuthenticatedCoordinatorRaportyRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/_coordinator/pulpit': {
+      id: '/_authenticated/_coordinator/pulpit'
+      path: '/pulpit'
+      fullPath: '/pulpit'
+      preLoaderRoute: typeof AuthenticatedCoordinatorPulpitRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
   }
 }
 
+interface AuthenticatedCoordinatorRouteChildren {
+  AuthenticatedCoordinatorPulpitRoute: typeof AuthenticatedCoordinatorPulpitRoute
+  AuthenticatedCoordinatorRaportyRoute: typeof AuthenticatedCoordinatorRaportyRoute
+  AuthenticatedCoordinatorSeniorzyRoute: typeof AuthenticatedCoordinatorSeniorzyRoute
+  AuthenticatedCoordinatorWizytyRoute: typeof AuthenticatedCoordinatorWizytyRoute
+}
+
+const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildren =
+  {
+    AuthenticatedCoordinatorPulpitRoute: AuthenticatedCoordinatorPulpitRoute,
+    AuthenticatedCoordinatorRaportyRoute: AuthenticatedCoordinatorRaportyRoute,
+    AuthenticatedCoordinatorSeniorzyRoute:
+      AuthenticatedCoordinatorSeniorzyRoute,
+    AuthenticatedCoordinatorWizytyRoute: AuthenticatedCoordinatorWizytyRoute,
+  }
+
+const AuthenticatedCoordinatorRouteWithChildren =
+  AuthenticatedCoordinatorRoute._addFileChildren(
+    AuthenticatedCoordinatorRouteChildren,
+  )
+
+interface AuthenticatedRouteRouteChildren {
+  AuthenticatedCoordinatorRoute: typeof AuthenticatedCoordinatorRouteWithChildren
+  AuthenticatedAppRoute: typeof AuthenticatedAppRoute
+  AuthenticatedOpiekunRoute: typeof AuthenticatedOpiekunRoute
+}
+
+const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
+  AuthenticatedCoordinatorRoute: AuthenticatedCoordinatorRouteWithChildren,
+  AuthenticatedAppRoute: AuthenticatedAppRoute,
+  AuthenticatedOpiekunRoute: AuthenticatedOpiekunRoute,
+}
+
+const AuthenticatedRouteRouteWithChildren =
+  AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
+  AuthRoute: AuthRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
