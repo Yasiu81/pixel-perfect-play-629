@@ -171,7 +171,7 @@ function AuthPage() {
                     {loading ? "Tworzenie..." : "Utwórz konto"}
                   </Button>
                   <p className="text-xs text-muted-foreground">
-                    Pierwsze konto otrzyma rolę koordynatora. Kolejne konta opiekunów dodaje koordynator.
+                    Nowe konta czekają na nadanie roli przez koordynatora. Rola koordynatora dla pierwszego konta nadawana jest ręcznie w bazie danych.
                   </p>
                 </form>
               </TabsContent>
