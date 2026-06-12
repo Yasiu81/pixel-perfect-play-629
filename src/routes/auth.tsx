@@ -55,8 +55,21 @@ function AuthPage() {
     navigate({ to: "/app" });
   }
 
+  function validatePassword(pw: string): string | null {
+    if (pw.length < 12) return "Hasło musi mieć co najmniej 12 znaków.";
+    if (!/[a-z]/.test(pw)) return "Hasło musi zawierać małą literę.";
+    if (!/[A-Z]/.test(pw)) return "Hasło musi zawierać dużą literę.";
+    if (!/[0-9]/.test(pw)) return "Hasło musi zawierać cyfrę.";
+    return null;
+  }
+
   async function handleSignup(e: FormEvent) {
     e.preventDefault();
+    const pwError = validatePassword(signupPassword);
+    if (pwError) {
+      toast.error("Słabe hasło", { description: pwError });
+      return;
+    }
     setLoading(true);
     const { error } = await supabase.auth.signUp({
       email: signupEmail,
