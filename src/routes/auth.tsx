@@ -55,8 +55,21 @@ function AuthPage() {
     navigate({ to: "/app" });
   }
 
+  function validatePassword(pw: string): string | null {
+    if (pw.length < 12) return "Hasło musi mieć co najmniej 12 znaków.";
+    if (!/[a-z]/.test(pw)) return "Hasło musi zawierać małą literę.";
+    if (!/[A-Z]/.test(pw)) return "Hasło musi zawierać dużą literę.";
+    if (!/[0-9]/.test(pw)) return "Hasło musi zawierać cyfrę.";
+    return null;
+  }
+
   async function handleSignup(e: FormEvent) {
     e.preventDefault();
+    const pwError = validatePassword(signupPassword);
+    if (pwError) {
+      toast.error("Słabe hasło", { description: pwError });
+      return;
+    }
     setLoading(true);
     const { error } = await supabase.auth.signUp({
       email: signupEmail,
@@ -161,11 +174,13 @@ function AuthPage() {
                       type="password"
                       autoComplete="new-password"
                       required
-                      minLength={6}
+                      minLength={12}
                       value={signupPassword}
                       onChange={(e) => setSignupPassword(e.target.value)}
                     />
-                    <p className="text-xs text-muted-foreground">Min. 6 znaków.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Min. 12 znaków, w tym mała i duża litera oraz cyfra.
+                    </p>
                   </div>
                   <Button type="submit" className="w-full" disabled={loading}>
                     {loading ? "Tworzenie..." : "Utwórz konto"}

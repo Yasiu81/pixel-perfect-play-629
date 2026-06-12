@@ -141,7 +141,6 @@ function SeniorzyPage() {
       const payload = {
         imie: values.imie.trim(),
         nazwisko: values.nazwisko.trim(),
-        pesel: values.pesel?.trim() || null,
         telefon: values.telefon?.trim() || null,
         telefon_rodziny: values.telefon_rodziny?.trim() || null,
         adres: values.adres.trim(),
@@ -158,8 +157,22 @@ function SeniorzyPage() {
         stawka_h: values.stawka_h,
         status: values.status,
       };
-      const { error } = await supabase.from("seniors").insert(payload);
+      const { data: inserted, error } = await supabase
+        .from("seniors")
+        .insert(payload)
+        .select("id")
+        .single();
       if (error) throw error;
+
+      // PESEL zapisywany osobno przez funkcję szyfrującą (pgp_sym_encrypt + klucz z Vault).
+      const peselValue = values.pesel?.trim();
+      if (peselValue && inserted?.id) {
+        const { error: peselErr } = await supabase.rpc("set_senior_pesel", {
+          _senior_id: inserted.id,
+          _pesel: peselValue,
+        });
+        if (peselErr) throw peselErr;
+      }
     },
     onSuccess: () => {
       toast.success("Senior dodany");
