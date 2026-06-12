@@ -51,12 +51,12 @@ export const Route = createFileRoute("/_authenticated/_coordinator/seniorzy")({
   component: SeniorzyPage,
 });
 
-type SeniorStatus = "aktywny" | "zawieszony" | "zakonczony";
+type SeniorStatus = "aktywny" | "wygasa" | "nieaktywny";
 
 const STATUS_LABELS: Record<SeniorStatus, { label: string; tone: string }> = {
   aktywny: { label: "Aktywny", tone: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
-  zawieszony: { label: "Zawieszony", tone: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
-  zakonczony: { label: "Zakończony", tone: "bg-muted text-muted-foreground" },
+  wygasa: { label: "Wygasa", tone: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
+  nieaktywny: { label: "Nieaktywny", tone: "bg-muted text-muted-foreground" },
 };
 
 const seniorSchema = z.object({
@@ -93,7 +93,7 @@ const seniorSchema = z.object({
   godziny_min: z.coerce.number().int().min(0).max(1000),
   godziny_max: z.coerce.number().int().min(0).max(1000),
   stawka_h: z.coerce.number().min(0).max(1000),
-  status: z.enum(["aktywny", "zawieszony", "zakonczony"]),
+  status: z.enum(["aktywny", "wygasa", "nieaktywny"]),
 });
 
 type SeniorFormValues = z.infer<typeof seniorSchema>;
@@ -338,8 +338,8 @@ function SeniorForm({
                       </FormControl>
                       <SelectContent>
                         <SelectItem value="aktywny">Aktywny</SelectItem>
-                        <SelectItem value="zawieszony">Zawieszony</SelectItem>
-                        <SelectItem value="zakonczony">Zakończony</SelectItem>
+                        <SelectItem value="wygasa">Wygasa</SelectItem>
+                        <SelectItem value="nieaktywny">Nieaktywny</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
