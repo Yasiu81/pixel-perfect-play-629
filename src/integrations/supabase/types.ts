@@ -85,6 +85,36 @@ export type Database = {
           },
         ]
       }
+      audit_log: {
+        Row: {
+          created_at: string
+          details: Json | null
+          id: string
+          operation: string
+          record_id: string | null
+          table_name: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          details?: Json | null
+          id?: string
+          operation: string
+          record_id?: string | null
+          table_name: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          details?: Json | null
+          id?: string
+          operation?: string
+          record_id?: string | null
+          table_name?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -136,7 +166,7 @@ export type Database = {
           nfc_uid: string | null
           notatka_techniczna: string | null
           opiekun_id: string | null
-          pesel: string | null
+          pesel_encrypted: string | null
           plan_wsparcia: Json | null
           status: Database["public"]["Enums"]["senior_status"]
           stawka_h: number
@@ -161,7 +191,7 @@ export type Database = {
           nfc_uid?: string | null
           notatka_techniczna?: string | null
           opiekun_id?: string | null
-          pesel?: string | null
+          pesel_encrypted?: string | null
           plan_wsparcia?: Json | null
           status?: Database["public"]["Enums"]["senior_status"]
           stawka_h?: number
@@ -186,7 +216,7 @@ export type Database = {
           nfc_uid?: string | null
           notatka_techniczna?: string | null
           opiekun_id?: string | null
-          pesel?: string | null
+          pesel_encrypted?: string | null
           plan_wsparcia?: Json | null
           status?: Database["public"]["Enums"]["senior_status"]
           stawka_h?: number
@@ -372,12 +402,18 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _get_pesel_key: { Args: never; Returns: string }
+      get_senior_pesel: { Args: { _senior_id: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
         Returns: boolean
+      }
+      set_senior_pesel: {
+        Args: { _pesel: string; _senior_id: string }
+        Returns: undefined
       }
     }
     Enums: {
