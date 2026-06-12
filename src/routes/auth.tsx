@@ -174,11 +174,13 @@ function AuthPage() {
                       type="password"
                       autoComplete="new-password"
                       required
-                      minLength={6}
+                      minLength={12}
                       value={signupPassword}
                       onChange={(e) => setSignupPassword(e.target.value)}
                     />
-                    <p className="text-xs text-muted-foreground">Min. 6 znaków.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Min. 12 znaków, w tym mała i duża litera oraz cyfra.
+                    </p>
                   </div>
                   <Button type="submit" className="w-full" disabled={loading}>
                     {loading ? "Tworzenie..." : "Utwórz konto"}
