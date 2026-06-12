@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
@@ -255,16 +255,8 @@ function SeniorzyPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Button asChild size="sm" variant="ghost">
-                        <Link
-                          to="/seniorzy/$id"
-                          params={{ id: s.id }}
-                          disabled
-                          aria-disabled
-                          onClick={(e) => e.preventDefault()}
-                        >
-                          Otwórz
-                        </Link>
+                      <Button size="sm" variant="ghost" disabled title="Kartoteka — wkrótce">
+                        Otwórz
                       </Button>
                     </TableCell>
                   </TableRow>
