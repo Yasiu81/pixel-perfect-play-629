@@ -104,6 +104,7 @@ type SeniorRow = {
   nazwisko: string;
   adres: string;
   telefon: string | null;
+  pesel_last2: string | null;
   godziny_min: number;
   godziny_max: number;
   status: SeniorStatus;
