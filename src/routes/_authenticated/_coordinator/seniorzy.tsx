@@ -120,7 +120,7 @@ function SeniorzyPage() {
     queryFn: async (): Promise<SeniorRow[]> => {
       const { data, error } = await supabase
         .from("seniors")
-        .select("id, imie, nazwisko, adres, telefon, godziny_min, godziny_max, status")
+        .select("id, imie, nazwisko, adres, telefon, pesel_last2, godziny_min, godziny_max, status")
         .order("nazwisko", { ascending: true });
       if (error) throw error;
       return (data ?? []) as SeniorRow[];
