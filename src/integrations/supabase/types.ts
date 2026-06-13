@@ -167,6 +167,7 @@ export type Database = {
           notatka_techniczna: string | null
           opiekun_id: string | null
           pesel_encrypted: string | null
+          pesel_last2: string | null
           plan_wsparcia: Json | null
           status: Database["public"]["Enums"]["senior_status"]
           stawka_h: number
@@ -192,6 +193,7 @@ export type Database = {
           notatka_techniczna?: string | null
           opiekun_id?: string | null
           pesel_encrypted?: string | null
+          pesel_last2?: string | null
           plan_wsparcia?: Json | null
           status?: Database["public"]["Enums"]["senior_status"]
           stawka_h?: number
@@ -217,6 +219,7 @@ export type Database = {
           notatka_techniczna?: string | null
           opiekun_id?: string | null
           pesel_encrypted?: string | null
+          pesel_last2?: string | null
           plan_wsparcia?: Json | null
           status?: Database["public"]["Enums"]["senior_status"]
           stawka_h?: number

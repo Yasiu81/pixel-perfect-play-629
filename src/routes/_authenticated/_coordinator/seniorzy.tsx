@@ -1,11 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Plus, Search, Loader2, MapPin } from "lucide-react";
+import { Plus, Search, Loader2, MapPin, ArrowRight } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -104,6 +104,7 @@ type SeniorRow = {
   nazwisko: string;
   adres: string;
   telefon: string | null;
+  pesel_last2: string | null;
   godziny_min: number;
   godziny_max: number;
   status: SeniorStatus;
@@ -119,7 +120,7 @@ function SeniorzyPage() {
     queryFn: async (): Promise<SeniorRow[]> => {
       const { data, error } = await supabase
         .from("seniors")
-        .select("id, imie, nazwisko, adres, telefon, godziny_min, godziny_max, status")
+        .select("id, imie, nazwisko, adres, telefon, pesel_last2, godziny_min, godziny_max, status")
         .order("nazwisko", { ascending: true });
       if (error) throw error;
       return (data ?? []) as SeniorRow[];
@@ -220,25 +221,26 @@ function SeniorzyPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Nazwisko i imię</TableHead>
+              <TableHead>PESEL</TableHead>
               <TableHead>Adres</TableHead>
               <TableHead>Telefon</TableHead>
               <TableHead>Godziny (min/max)</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-20" />
+              <TableHead className="w-24" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               Array.from({ length: 3 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={7}>
                     <Skeleton className="h-6 w-full" />
                   </TableCell>
                 </TableRow>
               ))
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                   {search
                     ? "Brak wyników dla podanej frazy."
                     : "Brak seniorów. Dodaj pierwszego korzystając z przycisku powyżej."}
@@ -251,6 +253,9 @@ function SeniorzyPage() {
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">
                       {s.nazwisko} {s.imie}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs tracking-wider text-muted-foreground">
+                      {s.pesel_last2 ? `•••••••••${s.pesel_last2}` : "—"}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
@@ -268,8 +273,11 @@ function SeniorzyPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Button size="sm" variant="ghost" disabled title="Kartoteka — wkrótce">
-                        Otwórz
+                      <Button asChild size="sm" variant="ghost">
+                        <Link to="/seniorzy/$id" params={{ id: s.id }}>
+                          Otwórz
+                          <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                        </Link>
                       </Button>
                     </TableCell>
                   </TableRow>
