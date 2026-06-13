@@ -221,25 +221,26 @@ function SeniorzyPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Nazwisko i imię</TableHead>
+              <TableHead>PESEL</TableHead>
               <TableHead>Adres</TableHead>
               <TableHead>Telefon</TableHead>
               <TableHead>Godziny (min/max)</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-20" />
+              <TableHead className="w-24" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               Array.from({ length: 3 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={6}>
+                  <TableCell colSpan={7}>
                     <Skeleton className="h-6 w-full" />
                   </TableCell>
                 </TableRow>
               ))
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                   {search
                     ? "Brak wyników dla podanej frazy."
                     : "Brak seniorów. Dodaj pierwszego korzystając z przycisku powyżej."}
@@ -252,6 +253,9 @@ function SeniorzyPage() {
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">
                       {s.nazwisko} {s.imie}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs tracking-wider text-muted-foreground">
+                      {s.pesel_last2 ? `•••••••••${s.pesel_last2}` : "—"}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
@@ -269,8 +273,11 @@ function SeniorzyPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Button size="sm" variant="ghost" disabled title="Kartoteka — wkrótce">
-                        Otwórz
+                      <Button asChild size="sm" variant="ghost">
+                        <Link to="/seniorzy/$id" params={{ id: s.id }}>
+                          Otwórz
+                          <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                        </Link>
                       </Button>
                     </TableCell>
                   </TableRow>
