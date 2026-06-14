@@ -111,7 +111,7 @@ function WizytyPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("seniors")
-        .select("id, imie, nazwisko, status")
+        .select("id, imie, nazwisko, status, plan_wsparcia")
         .neq("status", "nieaktywny")
         .order("nazwisko");
       if (error) throw error;
