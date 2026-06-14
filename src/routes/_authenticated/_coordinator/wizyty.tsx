@@ -441,7 +441,13 @@ function WizytyPage() {
                       {formatDateTime(v.planned_start)} → {formatDateTime(v.planned_end)}
                     </TableCell>
                     <TableCell>{caregiverName(v.caregiver_id)}</TableCell>
-                    <TableCell>{v.hours_billed}h</TableCell>
+                    <TableCell>
+                      {v.hours_billed > 0 ? (
+                        `${v.hours_billed}h`
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={STATUS_TONE[v.status] ?? ""}>
                         {STATUS_LABEL[v.status] ?? v.status}
