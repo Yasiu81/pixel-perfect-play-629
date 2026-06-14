@@ -163,23 +163,41 @@ function WizytyPage() {
       caregiver_id: NO_CAREGIVER,
       planned_start: "",
       planned_end: "",
-      hours_billed: "4",
+      planned_tasks: [],
       notes: "",
     },
   });
 
+  const selectedSeniorId = form.watch("senior_id");
+  const selectedSenior = seniorsQ.data?.find((s) => s.id === selectedSeniorId);
+  const planTasks: string[] = Array.isArray(selectedSenior?.plan_wsparcia)
+    ? (selectedSenior!.plan_wsparcia as unknown[]).filter(
+        (x): x is string => typeof x === "string",
+      )
+    : [];
+
   const createMut = useMutation({
     mutationFn: async (v: VisitForm) => {
-      const { error } = await supabase.from("visits").insert({
-        senior_id: v.senior_id,
-        caregiver_id: v.caregiver_id && v.caregiver_id !== NO_CAREGIVER ? v.caregiver_id : null,
-        planned_start: new Date(v.planned_start).toISOString(),
-        planned_end: new Date(v.planned_end).toISOString(),
-        hours_billed: Number(v.hours_billed),
-        notes: v.notes || null,
-        status: "planned",
-      });
+      const { data: visit, error } = await supabase
+        .from("visits")
+        .insert({
+          senior_id: v.senior_id,
+          caregiver_id:
+            v.caregiver_id && v.caregiver_id !== NO_CAREGIVER ? v.caregiver_id : null,
+          planned_start: new Date(v.planned_start).toISOString(),
+          planned_end: new Date(v.planned_end).toISOString(),
+          notes: v.notes || null,
+          status: "planned",
+        })
+        .select("id")
+        .single();
       if (error) throw error;
+      if (v.planned_tasks.length > 0) {
+        const { error: tErr } = await supabase.from("visit_tasks").insert(
+          v.planned_tasks.map((t) => ({ visit_id: visit.id, task_name: t })),
+        );
+        if (tErr) throw tErr;
+      }
     },
     onSuccess: () => {
       toast.success("Wizyta zaplanowana");
