@@ -330,15 +330,45 @@ function WizytyPage() {
 
                 <FormField
                   control={form.control}
-                  name="hours_billed"
+                  name="planned_tasks"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Godziny do rozliczenia *</FormLabel>
-                      <FormControl>
-                        <Input type="number" min={1} max={24} step={1} {...field} />
-                      </FormControl>
+                      <FormLabel>Planowane czynności</FormLabel>
+                      {!selectedSeniorId ? (
+                        <FormDescription>
+                          Wybierz najpierw seniora, by zobaczyć jego plan wsparcia.
+                        </FormDescription>
+                      ) : planTasks.length === 0 ? (
+                        <FormDescription>
+                          Senior nie ma jeszcze zdefiniowanego planu wsparcia.
+                        </FormDescription>
+                      ) : (
+                        <div className="space-y-2 rounded-md border p-3">
+                          {planTasks.map((task) => {
+                            const checked = field.value.includes(task);
+                            return (
+                              <label
+                                key={task}
+                                className="flex cursor-pointer items-center gap-2 text-sm"
+                              >
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(c) => {
+                                    if (c) field.onChange([...field.value, task]);
+                                    else
+                                      field.onChange(
+                                        field.value.filter((t) => t !== task),
+                                      );
+                                  }}
+                                />
+                                <span>{task}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
                       <FormDescription>
-                        Liczba godzin zaliczana do limitu MOPS (zwykle = długość wizyty).
+                        Pre-fill listy zadań, którą opiekun zobaczy podczas wizyty.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
