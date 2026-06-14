@@ -45,6 +45,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type WizytySearch = { filter?: "alert" };
@@ -64,10 +65,7 @@ const visitSchema = z
     caregiver_id: z.string().optional(),
     planned_start: z.string().min(1, "Wymagane"),
     planned_end: z.string().min(1, "Wymagane"),
-    hours_billed: z
-      .string()
-      .min(1, "Wymagane")
-      .refine((v) => Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 24, "1–24"),
+    planned_tasks: z.array(z.string()),
     notes: z.string().trim().max(500).optional().or(z.literal("")),
   })
   .refine((d) => new Date(d.planned_end) > new Date(d.planned_start), {
@@ -113,7 +111,7 @@ function WizytyPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("seniors")
-        .select("id, imie, nazwisko, status")
+        .select("id, imie, nazwisko, status, plan_wsparcia")
         .neq("status", "nieaktywny")
         .order("nazwisko");
       if (error) throw error;
@@ -165,23 +163,41 @@ function WizytyPage() {
       caregiver_id: NO_CAREGIVER,
       planned_start: "",
       planned_end: "",
-      hours_billed: "4",
+      planned_tasks: [],
       notes: "",
     },
   });
 
+  const selectedSeniorId = form.watch("senior_id");
+  const selectedSenior = seniorsQ.data?.find((s) => s.id === selectedSeniorId);
+  const planTasks: string[] = Array.isArray(selectedSenior?.plan_wsparcia)
+    ? (selectedSenior!.plan_wsparcia as unknown[]).filter(
+        (x): x is string => typeof x === "string",
+      )
+    : [];
+
   const createMut = useMutation({
     mutationFn: async (v: VisitForm) => {
-      const { error } = await supabase.from("visits").insert({
-        senior_id: v.senior_id,
-        caregiver_id: v.caregiver_id && v.caregiver_id !== NO_CAREGIVER ? v.caregiver_id : null,
-        planned_start: new Date(v.planned_start).toISOString(),
-        planned_end: new Date(v.planned_end).toISOString(),
-        hours_billed: Number(v.hours_billed),
-        notes: v.notes || null,
-        status: "planned",
-      });
+      const { data: visit, error } = await supabase
+        .from("visits")
+        .insert({
+          senior_id: v.senior_id,
+          caregiver_id:
+            v.caregiver_id && v.caregiver_id !== NO_CAREGIVER ? v.caregiver_id : null,
+          planned_start: new Date(v.planned_start).toISOString(),
+          planned_end: new Date(v.planned_end).toISOString(),
+          notes: v.notes || null,
+          status: "planned",
+        })
+        .select("id")
+        .single();
       if (error) throw error;
+      if (v.planned_tasks.length > 0) {
+        const { error: tErr } = await supabase.from("visit_tasks").insert(
+          v.planned_tasks.map((t) => ({ visit_id: visit.id, task_name: t })),
+        );
+        if (tErr) throw tErr;
+      }
     },
     onSuccess: () => {
       toast.success("Wizyta zaplanowana");
@@ -314,15 +330,45 @@ function WizytyPage() {
 
                 <FormField
                   control={form.control}
-                  name="hours_billed"
+                  name="planned_tasks"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Godziny do rozliczenia *</FormLabel>
-                      <FormControl>
-                        <Input type="number" min={1} max={24} step={1} {...field} />
-                      </FormControl>
+                      <FormLabel>Planowane czynności</FormLabel>
+                      {!selectedSeniorId ? (
+                        <FormDescription>
+                          Wybierz najpierw seniora, by zobaczyć jego plan wsparcia.
+                        </FormDescription>
+                      ) : planTasks.length === 0 ? (
+                        <FormDescription>
+                          Senior nie ma jeszcze zdefiniowanego planu wsparcia.
+                        </FormDescription>
+                      ) : (
+                        <div className="space-y-2 rounded-md border p-3">
+                          {planTasks.map((task) => {
+                            const checked = field.value.includes(task);
+                            return (
+                              <label
+                                key={task}
+                                className="flex cursor-pointer items-center gap-2 text-sm"
+                              >
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(c) => {
+                                    if (c) field.onChange([...field.value, task]);
+                                    else
+                                      field.onChange(
+                                        field.value.filter((t) => t !== task),
+                                      );
+                                  }}
+                                />
+                                <span>{task}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
                       <FormDescription>
-                        Liczba godzin zaliczana do limitu MOPS (zwykle = długość wizyty).
+                        Pre-fill listy zadań, którą opiekun zobaczy podczas wizyty.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -395,7 +441,13 @@ function WizytyPage() {
                       {formatDateTime(v.planned_start)} → {formatDateTime(v.planned_end)}
                     </TableCell>
                     <TableCell>{caregiverName(v.caregiver_id)}</TableCell>
-                    <TableCell>{v.hours_billed}h</TableCell>
+                    <TableCell>
+                      {v.hours_billed && v.hours_billed > 0 ? (
+                        `${v.hours_billed}h`
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={STATUS_TONE[v.status] ?? ""}>
                         {STATUS_LABEL[v.status] ?? v.status}

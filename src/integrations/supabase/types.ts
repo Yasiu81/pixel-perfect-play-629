@@ -332,7 +332,7 @@ export type Database = {
           gps_distance_exit_m: number | null
           gps_verified_entry: boolean
           gps_verified_exit: boolean
-          hours_billed: number
+          hours_billed: number | null
           id: string
           nfc_verified_entry: boolean
           nfc_verified_exit: boolean
@@ -352,7 +352,7 @@ export type Database = {
           gps_distance_exit_m?: number | null
           gps_verified_entry?: boolean
           gps_verified_exit?: boolean
-          hours_billed?: number
+          hours_billed?: number | null
           id?: string
           nfc_verified_entry?: boolean
           nfc_verified_exit?: boolean
@@ -372,7 +372,7 @@ export type Database = {
           gps_distance_exit_m?: number | null
           gps_verified_entry?: boolean
           gps_verified_exit?: boolean
-          hours_billed?: number
+          hours_billed?: number | null
           id?: string
           nfc_verified_entry?: boolean
           nfc_verified_exit?: boolean
