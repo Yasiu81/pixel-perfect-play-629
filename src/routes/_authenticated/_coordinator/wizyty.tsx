@@ -442,7 +442,7 @@ function WizytyPage() {
                     </TableCell>
                     <TableCell>{caregiverName(v.caregiver_id)}</TableCell>
                     <TableCell>
-                      {v.hours_billed > 0 ? (
+                      {v.hours_billed && v.hours_billed > 0 ? (
                         `${v.hours_billed}h`
                       ) : (
                         <span className="text-muted-foreground">—</span>
