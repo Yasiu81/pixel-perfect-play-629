@@ -65,7 +65,7 @@ const visitSchema = z
     caregiver_id: z.string().optional(),
     planned_start: z.string().min(1, "Wymagane"),
     planned_end: z.string().min(1, "Wymagane"),
-    planned_tasks: z.array(z.string()).default([]),
+    planned_tasks: z.array(z.string()),
     notes: z.string().trim().max(500).optional().or(z.literal("")),
   })
   .refine((d) => new Date(d.planned_end) > new Date(d.planned_start), {
