@@ -327,9 +327,9 @@ function SeniorForm({
       decyzja_data: "",
       decyzja_od: "",
       decyzja_do: "",
-      godziny_min: 0,
-      godziny_max: 0,
-      stawka_h: 0,
+      godziny_min: "",
+      godziny_max: "",
+      stawka_h: "",
       status: "aktywny",
     },
   });
