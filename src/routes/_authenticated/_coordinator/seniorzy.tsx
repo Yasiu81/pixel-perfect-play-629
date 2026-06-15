@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { useForm } from "react-hook-form";
+import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { Plus, Search, Loader2, MapPin, ArrowRight } from "lucide-react";
@@ -90,9 +90,21 @@ const seniorSchema = z.object({
   decyzja_data: z.string().optional().or(z.literal("")),
   decyzja_od: z.string().optional().or(z.literal("")),
   decyzja_do: z.string().optional().or(z.literal("")),
-  godziny_min: z.coerce.number().int().min(0).max(1000),
-  godziny_max: z.coerce.number().int().min(0).max(1000),
-  stawka_h: z.coerce.number().min(0).max(1000),
+  godziny_min: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine((v) => !v || (/^\d+$/.test(v) && Number(v) <= 1000), "Liczba całkowita 0-1000"),
+  godziny_max: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine((v) => !v || (/^\d+$/.test(v) && Number(v) <= 1000), "Liczba całkowita 0-1000"),
+  stawka_h: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine((v) => !v || (!Number.isNaN(Number(v)) && Number(v) >= 0 && Number(v) <= 1000), "Liczba 0-1000"),
   status: z.enum(["aktywny", "wygasa", "nieaktywny"]),
 });
 
@@ -153,9 +165,9 @@ function SeniorzyPage() {
         decyzja_data: values.decyzja_data || null,
         decyzja_od: values.decyzja_od || null,
         decyzja_do: values.decyzja_do || null,
-        godziny_min: values.godziny_min,
-        godziny_max: values.godziny_max,
-        stawka_h: values.stawka_h,
+        godziny_min: values.godziny_min ? Number(values.godziny_min) : null,
+        godziny_max: values.godziny_max ? Number(values.godziny_max) : null,
+        stawka_h: values.stawka_h ? Number(values.stawka_h) : null,
         status: values.status,
       };
       const { data: inserted, error } = await supabase
@@ -315,9 +327,9 @@ function SeniorForm({
       decyzja_data: "",
       decyzja_od: "",
       decyzja_do: "",
-      godziny_min: 0,
-      godziny_max: 0,
-      stawka_h: 0,
+      godziny_min: "",
+      godziny_max: "",
+      stawka_h: "",
       status: "aktywny",
     },
   });
@@ -449,7 +461,7 @@ function TextField({
   type = "text",
   step,
 }: {
-  form: ReturnType<typeof useForm<SeniorFormValues>>;
+  form: UseFormReturn<SeniorFormValues>;
   name: keyof SeniorFormValues;
   label: string;
   placeholder?: string;

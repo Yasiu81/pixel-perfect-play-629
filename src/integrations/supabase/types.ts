@@ -156,8 +156,8 @@ export type Database = {
           decyzja_do: string | null
           decyzja_nr: string | null
           decyzja_od: string | null
-          godziny_max: number
-          godziny_min: number
+          godziny_max: number | null
+          godziny_min: number | null
           id: string
           imie: string
           lat: number | null
@@ -170,7 +170,7 @@ export type Database = {
           pesel_last2: string | null
           plan_wsparcia: Json | null
           status: Database["public"]["Enums"]["senior_status"]
-          stawka_h: number
+          stawka_h: number | null
           telefon: string | null
           telefon_rodziny: string | null
           updated_at: string
@@ -182,8 +182,8 @@ export type Database = {
           decyzja_do?: string | null
           decyzja_nr?: string | null
           decyzja_od?: string | null
-          godziny_max?: number
-          godziny_min?: number
+          godziny_max?: number | null
+          godziny_min?: number | null
           id?: string
           imie: string
           lat?: number | null
@@ -196,7 +196,7 @@ export type Database = {
           pesel_last2?: string | null
           plan_wsparcia?: Json | null
           status?: Database["public"]["Enums"]["senior_status"]
-          stawka_h?: number
+          stawka_h?: number | null
           telefon?: string | null
           telefon_rodziny?: string | null
           updated_at?: string
@@ -208,8 +208,8 @@ export type Database = {
           decyzja_do?: string | null
           decyzja_nr?: string | null
           decyzja_od?: string | null
-          godziny_max?: number
-          godziny_min?: number
+          godziny_max?: number | null
+          godziny_min?: number | null
           id?: string
           imie?: string
           lat?: number | null
@@ -222,7 +222,7 @@ export type Database = {
           pesel_last2?: string | null
           plan_wsparcia?: Json | null
           status?: Database["public"]["Enums"]["senior_status"]
-          stawka_h?: number
+          stawka_h?: number | null
           telefon?: string | null
           telefon_rodziny?: string | null
           updated_at?: string

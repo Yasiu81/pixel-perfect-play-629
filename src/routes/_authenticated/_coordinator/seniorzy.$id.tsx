@@ -20,6 +20,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export const Route = createFileRoute("/_authenticated/_coordinator/seniorzy/$id")({
   component: SeniorDetailPage,
@@ -76,11 +85,28 @@ type SeniorDetail = {
   decyzja_data: string | null;
   decyzja_od: string | null;
   decyzja_do: string | null;
-  godziny_min: number;
-  godziny_max: number;
-  stawka_h: number;
+  godziny_min: number | null;
+  godziny_max: number | null;
+  stawka_h: number | null;
   status: SeniorStatus;
   pesel_last2: string | null;
+  plan_wsparcia: unknown;
+};
+
+type VisitRow = {
+  id: string;
+  planned_start: string;
+  planned_end: string;
+  status: string;
+  hours_billed: number | null;
+};
+
+const VISIT_STATUS_TONE: Record<string, string> = {
+  planned: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
+  active: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+  completed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+  alert: "bg-red-500/15 text-red-700 dark:text-red-400",
+  cancelled: "bg-muted text-muted-foreground",
 };
 
 function SeniorDetailPage() {
@@ -92,12 +118,26 @@ function SeniorDetailPage() {
       const { data, error } = await supabase
         .from("seniors")
         .select(
-          "id, imie, nazwisko, telefon, telefon_rodziny, adres, lat, lng, nfc_uid, notatka_techniczna, decyzja_nr, decyzja_data, decyzja_od, decyzja_do, godziny_min, godziny_max, stawka_h, status, pesel_last2",
+          "id, imie, nazwisko, telefon, telefon_rodziny, adres, lat, lng, nfc_uid, notatka_techniczna, decyzja_nr, decyzja_data, decyzja_od, decyzja_do, godziny_min, godziny_max, stawka_h, status, pesel_last2, plan_wsparcia",
         )
         .eq("id", id)
         .maybeSingle();
       if (error) throw error;
       return (data as SeniorDetail | null) ?? null;
+    },
+  });
+
+  const { data: visits } = useQuery({
+    queryKey: ["seniors", "visits", id],
+    queryFn: async (): Promise<VisitRow[]> => {
+      const { data, error } = await supabase
+        .from("visits")
+        .select("id, planned_start, planned_end, status, hours_billed")
+        .eq("senior_id", id)
+        .order("planned_start", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return (data ?? []) as VisitRow[];
     },
   });
 
@@ -125,6 +165,14 @@ function SeniorDetailPage() {
   }
 
   const st = STATUS_LABELS[senior.status];
+
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const realizedThisMonth = (visits ?? []).reduce((sum, v) => {
+    if (v.status !== "completed" || v.hours_billed == null) return sum;
+    const ts = new Date(v.planned_start).getTime();
+    return ts >= monthStart ? sum + v.hours_billed : sum;
+  }, 0);
 
   return (
     <div className="space-y-6">
@@ -204,12 +252,32 @@ function SeniorDetailPage() {
         </Section>
 
         <Section title="Godziny i stawka" icon={<Clock className="h-4 w-4" />}>
-          <Field
-            label="Godziny w miesiącu (min / max)"
-            value={`${senior.godziny_min} / ${senior.godziny_max} h`}
+          <SaldoBlock
+            min={senior.godziny_min}
+            max={senior.godziny_max}
+            realized={realizedThisMonth}
           />
-          <Field label="Stawka godz." value={`${senior.stawka_h.toFixed(2)} zł`} />
+          <Field
+            label="Stawka godz."
+            value={senior.stawka_h != null ? `${Number(senior.stawka_h).toFixed(2)} zł` : "—"}
+          />
           <Field label="NFC UID" value={senior.nfc_uid || "—"} />
+        </Section>
+
+        <Section
+          title="Plan wsparcia"
+          icon={<FileText className="h-4 w-4" />}
+          className="lg:col-span-2"
+        >
+          <PlanWsparcia plan={senior.plan_wsparcia} />
+        </Section>
+
+        <Section
+          title="Historia wizyt"
+          icon={<Clock className="h-4 w-4" />}
+          className="lg:col-span-2"
+        >
+          <VisitsTable visits={visits ?? []} />
         </Section>
 
         {senior.notatka_techniczna && (
@@ -226,6 +294,130 @@ function SeniorDetailPage() {
       </div>
     </div>
   );
+}
+
+function SaldoBlock({
+  min,
+  max,
+  realized,
+}: {
+  min: number | null;
+  max: number | null;
+  realized: number;
+}) {
+  if (max == null || max <= 0) {
+    return (
+      <div className="space-y-1">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Saldo godzin w tym miesiącu
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Brak przyznanego limitu godzin (decyzja MOPS nie została jeszcze uzupełniona).
+        </p>
+      </div>
+    );
+  }
+  const pct = Math.min(100, Math.round((realized / max) * 100));
+  const overMin = min != null && realized >= min;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Saldo godzin w tym miesiącu
+        </div>
+        <div className="text-sm font-medium">
+          {realized} / {max} h {min != null && <span className="text-muted-foreground">(min {min} h)</span>}
+        </div>
+      </div>
+      <Progress value={pct} />
+      <p className="text-xs text-muted-foreground">
+        {overMin ? "Minimum zrealizowane." : min != null ? `Do minimum pozostało ${Math.max(0, min - realized)} h.` : null}
+      </p>
+    </div>
+  );
+}
+
+function PlanWsparcia({ plan }: { plan: unknown }) {
+  const items = Array.isArray(plan)
+    ? (plan as unknown[]).map((v) => String(v)).filter(Boolean)
+    : [];
+  if (items.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Brak zdefiniowanego planu wsparcia. Uzupełnij listę czynności w kartotece, aby pojawiły się
+        jako pre-fill przy planowaniu wizyt.
+      </p>
+    );
+  }
+  return (
+    <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {items.map((t, i) => (
+        <li
+          key={i}
+          className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-foreground"
+        >
+          • {t}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function VisitsTable({ visits }: { visits: VisitRow[] }) {
+  if (visits.length === 0) {
+    return <p className="text-sm text-muted-foreground">Brak wizyt dla tego seniora.</p>;
+  }
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Data i godzina</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead className="text-right">Rozliczone h</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {visits.map((v) => (
+          <TableRow key={v.id}>
+            <TableCell>
+              {fmtDateTime(v.planned_start)} – {fmtTime(v.planned_end)}
+            </TableCell>
+            <TableCell>
+              <Badge
+                variant="secondary"
+                className={VISIT_STATUS_TONE[v.status] ?? "bg-muted text-muted-foreground"}
+              >
+                {v.status}
+              </Badge>
+            </TableCell>
+            <TableCell className="text-right tabular-nums">{v.hours_billed ?? "—"}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function fmtDateTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString("pl-PL", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function fmtTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return iso;
+  }
 }
 
 const REVEAL_SECONDS = 10;
