@@ -90,9 +90,21 @@ const seniorSchema = z.object({
   decyzja_data: z.string().optional().or(z.literal("")),
   decyzja_od: z.string().optional().or(z.literal("")),
   decyzja_do: z.string().optional().or(z.literal("")),
-  godziny_min: z.coerce.number().int().min(0).max(1000),
-  godziny_max: z.coerce.number().int().min(0).max(1000),
-  stawka_h: z.coerce.number().min(0).max(1000),
+  godziny_min: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine((v) => !v || (/^\d+$/.test(v) && Number(v) <= 1000), "Liczba całkowita 0-1000"),
+  godziny_max: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine((v) => !v || (/^\d+$/.test(v) && Number(v) <= 1000), "Liczba całkowita 0-1000"),
+  stawka_h: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine((v) => !v || (!Number.isNaN(Number(v)) && Number(v) >= 0 && Number(v) <= 1000), "Liczba 0-1000"),
   status: z.enum(["aktywny", "wygasa", "nieaktywny"]),
 });
 
