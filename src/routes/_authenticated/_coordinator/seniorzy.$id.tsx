@@ -166,6 +166,14 @@ function SeniorDetailPage() {
 
   const st = STATUS_LABELS[senior.status];
 
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const realizedThisMonth = (visits ?? []).reduce((sum, v) => {
+    if (v.status !== "completed" || v.hours_billed == null) return sum;
+    const ts = new Date(v.planned_start).getTime();
+    return ts >= monthStart ? sum + v.hours_billed : sum;
+  }, 0);
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
