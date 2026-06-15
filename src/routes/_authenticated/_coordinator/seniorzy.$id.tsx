@@ -85,11 +85,28 @@ type SeniorDetail = {
   decyzja_data: string | null;
   decyzja_od: string | null;
   decyzja_do: string | null;
-  godziny_min: number;
-  godziny_max: number;
-  stawka_h: number;
+  godziny_min: number | null;
+  godziny_max: number | null;
+  stawka_h: number | null;
   status: SeniorStatus;
   pesel_last2: string | null;
+  plan_wsparcia: unknown;
+};
+
+type VisitRow = {
+  id: string;
+  planned_start: string;
+  planned_end: string;
+  status: string;
+  hours_billed: number | null;
+};
+
+const VISIT_STATUS_TONE: Record<string, string> = {
+  planned: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
+  active: "bg-sky-500/15 text-sky-700 dark:text-sky-300",
+  completed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+  alert: "bg-red-500/15 text-red-700 dark:text-red-400",
+  cancelled: "bg-muted text-muted-foreground",
 };
 
 function SeniorDetailPage() {
@@ -101,12 +118,26 @@ function SeniorDetailPage() {
       const { data, error } = await supabase
         .from("seniors")
         .select(
-          "id, imie, nazwisko, telefon, telefon_rodziny, adres, lat, lng, nfc_uid, notatka_techniczna, decyzja_nr, decyzja_data, decyzja_od, decyzja_do, godziny_min, godziny_max, stawka_h, status, pesel_last2",
+          "id, imie, nazwisko, telefon, telefon_rodziny, adres, lat, lng, nfc_uid, notatka_techniczna, decyzja_nr, decyzja_data, decyzja_od, decyzja_do, godziny_min, godziny_max, stawka_h, status, pesel_last2, plan_wsparcia",
         )
         .eq("id", id)
         .maybeSingle();
       if (error) throw error;
       return (data as SeniorDetail | null) ?? null;
+    },
+  });
+
+  const { data: visits } = useQuery({
+    queryKey: ["seniors", "visits", id],
+    queryFn: async (): Promise<VisitRow[]> => {
+      const { data, error } = await supabase
+        .from("visits")
+        .select("id, planned_start, planned_end, status, hours_billed")
+        .eq("senior_id", id)
+        .order("planned_start", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return (data ?? []) as VisitRow[];
     },
   });
 
