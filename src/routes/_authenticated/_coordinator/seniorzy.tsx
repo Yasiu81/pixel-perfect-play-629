@@ -165,9 +165,9 @@ function SeniorzyPage() {
         decyzja_data: values.decyzja_data || null,
         decyzja_od: values.decyzja_od || null,
         decyzja_do: values.decyzja_do || null,
-        godziny_min: values.godziny_min,
-        godziny_max: values.godziny_max,
-        stawka_h: values.stawka_h,
+        godziny_min: values.godziny_min ? Number(values.godziny_min) : null,
+        godziny_max: values.godziny_max ? Number(values.godziny_max) : null,
+        stawka_h: values.stawka_h ? Number(values.stawka_h) : null,
         status: values.status,
       };
       const { data: inserted, error } = await supabase
