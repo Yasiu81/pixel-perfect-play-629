@@ -244,12 +244,32 @@ function SeniorDetailPage() {
         </Section>
 
         <Section title="Godziny i stawka" icon={<Clock className="h-4 w-4" />}>
-          <Field
-            label="Godziny w miesiącu (min / max)"
-            value={`${senior.godziny_min} / ${senior.godziny_max} h`}
+          <SaldoBlock
+            min={senior.godziny_min}
+            max={senior.godziny_max}
+            realized={realizedThisMonth}
           />
-          <Field label="Stawka godz." value={`${senior.stawka_h.toFixed(2)} zł`} />
+          <Field
+            label="Stawka godz."
+            value={senior.stawka_h != null ? `${Number(senior.stawka_h).toFixed(2)} zł` : "—"}
+          />
           <Field label="NFC UID" value={senior.nfc_uid || "—"} />
+        </Section>
+
+        <Section
+          title="Plan wsparcia"
+          icon={<FileText className="h-4 w-4" />}
+          className="lg:col-span-2"
+        >
+          <PlanWsparcia plan={senior.plan_wsparcia} />
+        </Section>
+
+        <Section
+          title="Historia wizyt"
+          icon={<Clock className="h-4 w-4" />}
+          className="lg:col-span-2"
+        >
+          <VisitsTable visits={visits ?? []} />
         </Section>
 
         {senior.notatka_techniczna && (
@@ -266,6 +286,130 @@ function SeniorDetailPage() {
       </div>
     </div>
   );
+}
+
+function SaldoBlock({
+  min,
+  max,
+  realized,
+}: {
+  min: number | null;
+  max: number | null;
+  realized: number;
+}) {
+  if (max == null || max <= 0) {
+    return (
+      <div className="space-y-1">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Saldo godzin w tym miesiącu
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Brak przyznanego limitu godzin (decyzja MOPS nie została jeszcze uzupełniona).
+        </p>
+      </div>
+    );
+  }
+  const pct = Math.min(100, Math.round((realized / max) * 100));
+  const overMin = min != null && realized >= min;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-baseline justify-between">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Saldo godzin w tym miesiącu
+        </div>
+        <div className="text-sm font-medium">
+          {realized} / {max} h {min != null && <span className="text-muted-foreground">(min {min} h)</span>}
+        </div>
+      </div>
+      <Progress value={pct} />
+      <p className="text-xs text-muted-foreground">
+        {overMin ? "Minimum zrealizowane." : min != null ? `Do minimum pozostało ${Math.max(0, min - realized)} h.` : null}
+      </p>
+    </div>
+  );
+}
+
+function PlanWsparcia({ plan }: { plan: unknown }) {
+  const items = Array.isArray(plan)
+    ? (plan as unknown[]).map((v) => String(v)).filter(Boolean)
+    : [];
+  if (items.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Brak zdefiniowanego planu wsparcia. Uzupełnij listę czynności w kartotece, aby pojawiły się
+        jako pre-fill przy planowaniu wizyt.
+      </p>
+    );
+  }
+  return (
+    <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {items.map((t, i) => (
+        <li
+          key={i}
+          className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-foreground"
+        >
+          • {t}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function VisitsTable({ visits }: { visits: VisitRow[] }) {
+  if (visits.length === 0) {
+    return <p className="text-sm text-muted-foreground">Brak wizyt dla tego seniora.</p>;
+  }
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Data i godzina</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead className="text-right">Rozliczone h</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {visits.map((v) => (
+          <TableRow key={v.id}>
+            <TableCell>
+              {fmtDateTime(v.planned_start)} – {fmtTime(v.planned_end)}
+            </TableCell>
+            <TableCell>
+              <Badge
+                variant="secondary"
+                className={VISIT_STATUS_TONE[v.status] ?? "bg-muted text-muted-foreground"}
+              >
+                {v.status}
+              </Badge>
+            </TableCell>
+            <TableCell className="text-right tabular-nums">{v.hours_billed ?? "—"}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function fmtDateTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString("pl-PL", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+function fmtTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return iso;
+  }
 }
 
 const REVEAL_SECONDS = 10;
