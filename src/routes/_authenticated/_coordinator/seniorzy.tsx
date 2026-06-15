@@ -461,7 +461,7 @@ function TextField({
   type = "text",
   step,
 }: {
-  form: ReturnType<typeof useForm<SeniorFormValues>>;
+  form: UseFormReturn<SeniorFormValues>;
   name: keyof SeniorFormValues;
   label: string;
   placeholder?: string;
