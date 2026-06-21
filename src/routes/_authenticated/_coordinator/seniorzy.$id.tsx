@@ -31,7 +31,6 @@ import {
 } from "@/components/ui/table";
 
 export const Route = createFileRoute("/_authenticated/_coordinator/seniorzy/$id")({
-  ssr: false,
   component: SeniorDetailPage,
   errorComponent: ({ error, reset }) => {
     const router = useRouter();
@@ -142,6 +141,19 @@ function SeniorDetailPage() {
     },
   });
 
+  // WAŻNE: useMemo musi być wywołany bezwarunkowo, przed jakimkolwiek early return.
+  // Hooki Reacta muszą się wykonywać w tej samej kolejności przy każdym renderze —
+  // umieszczenie useMemo po warunkowych return powodowało błąd #418.
+  const realizedThisMonth = useMemo(() => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    return (visits ?? []).reduce((sum, v) => {
+      if (v.status !== "completed" || v.hours_billed == null) return sum;
+      const ts = new Date(v.planned_start).getTime();
+      return ts >= monthStart ? sum + v.hours_billed : sum;
+    }, 0);
+  }, [visits]);
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -166,16 +178,6 @@ function SeniorDetailPage() {
   }
 
   const st = STATUS_LABELS[senior.status];
-
-  const realizedThisMonth = useMemo(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    return (visits ?? []).reduce((sum, v) => {
-      if (v.status !== "completed" || v.hours_billed == null) return sum;
-      const ts = new Date(v.planned_start).getTime();
-      return ts >= monthStart ? sum + v.hours_billed : sum;
-    }, 0);
-  }, [visits]);
 
   return (
     <div className="space-y-6">
