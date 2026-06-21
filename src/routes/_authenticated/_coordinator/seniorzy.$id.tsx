@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/table";
 
 export const Route = createFileRoute("/_authenticated/_coordinator/seniorzy/$id")({
+  ssr: false,
   component: SeniorDetailPage,
   errorComponent: ({ error, reset }) => {
     const router = useRouter();
