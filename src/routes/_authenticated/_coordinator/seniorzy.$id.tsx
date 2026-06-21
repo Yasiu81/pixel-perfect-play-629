@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -166,13 +166,15 @@ function SeniorDetailPage() {
 
   const st = STATUS_LABELS[senior.status];
 
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  const realizedThisMonth = (visits ?? []).reduce((sum, v) => {
-    if (v.status !== "completed" || v.hours_billed == null) return sum;
-    const ts = new Date(v.planned_start).getTime();
-    return ts >= monthStart ? sum + v.hours_billed : sum;
-  }, 0);
+  const realizedThisMonth = useMemo(() => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    return (visits ?? []).reduce((sum, v) => {
+      if (v.status !== "completed" || v.hours_billed == null) return sum;
+      const ts = new Date(v.planned_start).getTime();
+      return ts >= monthStart ? sum + v.hours_billed : sum;
+    }, 0);
+  }, [visits]);
 
   return (
     <div className="space-y-6">
