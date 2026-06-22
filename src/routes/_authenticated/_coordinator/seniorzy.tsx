@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
@@ -124,6 +124,7 @@ type SeniorRow = {
 
 function SeniorzyPage() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
 
@@ -262,7 +263,11 @@ function SeniorzyPage() {
               filtered.map((s) => {
                 const st = STATUS_LABELS[s.status];
                 return (
-                  <TableRow key={s.id}>
+                  <TableRow
+                    key={s.id}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => navigate({ to: "/seniorzy/$id", params: { id: s.id } })}
+                  >
                     <TableCell className="font-medium">
                       {s.nazwisko} {s.imie}
                     </TableCell>
@@ -284,7 +289,7 @@ function SeniorzyPage() {
                         {st.label}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <Button asChild size="sm" variant="ghost">
                         <Link to="/seniorzy/$id" params={{ id: s.id }}>
                           Otwórz

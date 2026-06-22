@@ -1,6 +1,9 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -14,6 +17,9 @@ import {
   Clock,
   StickyNote,
   ExternalLink,
+  Pencil,
+  Plus,
+  X,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -21,6 +27,30 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -70,6 +100,254 @@ const STATUS_LABELS: Record<SeniorStatus, { label: string; tone: string }> = {
   nieaktywny: { label: "Nieaktywny", tone: "bg-muted text-muted-foreground" },
 };
 
+// ─── Schemat edycji seniora ───────────────────────────────────────────────────
+
+const editSchema = z.object({
+  imie: z.string().trim().min(1, "Wymagane").max(80),
+  nazwisko: z.string().trim().min(1, "Wymagane").max(80),
+  telefon: z.string().trim().max(20).optional().or(z.literal("")),
+  telefon_rodziny: z.string().trim().max(20).optional().or(z.literal("")),
+  adres: z.string().trim().min(1, "Wymagane").max(200),
+  lat: z.string().trim().optional().or(z.literal("")).refine(
+    (v) => !v || !Number.isNaN(Number(v)), "Liczba"
+  ),
+  lng: z.string().trim().optional().or(z.literal("")).refine(
+    (v) => !v || !Number.isNaN(Number(v)), "Liczba"
+  ),
+  nfc_uid: z.string().trim().max(64).optional().or(z.literal("")),
+  notatka_techniczna: z.string().trim().max(1000).optional().or(z.literal("")),
+  decyzja_nr: z.string().trim().max(50).optional().or(z.literal("")),
+  decyzja_data: z.string().optional().or(z.literal("")),
+  decyzja_od: z.string().optional().or(z.literal("")),
+  decyzja_do: z.string().optional().or(z.literal("")),
+  godziny_min: z.string().optional().or(z.literal("")).refine(
+    (v) => !v || (/^\d+$/.test(v) && Number(v) <= 1000), "Liczba 0–1000"
+  ),
+  godziny_max: z.string().optional().or(z.literal("")).refine(
+    (v) => !v || (/^\d+$/.test(v) && Number(v) <= 1000), "Liczba 0–1000"
+  ),
+  stawka_h: z.string().optional().or(z.literal("")).refine(
+    (v) => !v || (!Number.isNaN(Number(v)) && Number(v) >= 0 && Number(v) <= 1000), "Liczba 0–1000"
+  ),
+  status: z.enum(["aktywny", "wygasa", "nieaktywny"]),
+});
+
+type EditForm = z.infer<typeof editSchema>;
+
+// ─── Dialog edycji ────────────────────────────────────────────────────────────
+
+function EditSeniorDialog({
+  senior,
+  open,
+  onClose,
+  onSaved,
+}: {
+  senior: SeniorDetail;
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const qc = useQueryClient();
+
+  const form = useForm<EditForm>({
+    resolver: zodResolver(editSchema),
+    defaultValues: {
+      imie: senior.imie ?? "",
+      nazwisko: senior.nazwisko ?? "",
+      telefon: senior.telefon ?? "",
+      telefon_rodziny: senior.telefon_rodziny ?? "",
+      adres: senior.adres ?? "",
+      lat: senior.lat != null ? String(senior.lat) : "",
+      lng: senior.lng != null ? String(senior.lng) : "",
+      nfc_uid: senior.nfc_uid ?? "",
+      notatka_techniczna: senior.notatka_techniczna ?? "",
+      decyzja_nr: senior.decyzja_nr ?? "",
+      decyzja_data: senior.decyzja_data ?? "",
+      decyzja_od: senior.decyzja_od ?? "",
+      decyzja_do: senior.decyzja_do ?? "",
+      godziny_min: senior.godziny_min != null ? String(senior.godziny_min) : "",
+      godziny_max: senior.godziny_max != null ? String(senior.godziny_max) : "",
+      stawka_h: senior.stawka_h != null ? String(senior.stawka_h) : "",
+      status: senior.status,
+    },
+  });
+
+  const mut = useMutation({
+    mutationFn: async (v: EditForm) => {
+      const { error } = await supabase.from("seniors").update({
+        imie: v.imie.trim(),
+        nazwisko: v.nazwisko.trim(),
+        telefon: v.telefon?.trim() || null,
+        telefon_rodziny: v.telefon_rodziny?.trim() || null,
+        adres: v.adres.trim(),
+        lat: v.lat ? Number(v.lat) : null,
+        lng: v.lng ? Number(v.lng) : null,
+        nfc_uid: v.nfc_uid?.trim() || null,
+        notatka_techniczna: v.notatka_techniczna?.trim() || null,
+        decyzja_nr: v.decyzja_nr?.trim() || null,
+        decyzja_data: v.decyzja_data || null,
+        decyzja_od: v.decyzja_od || null,
+        decyzja_do: v.decyzja_do || null,
+        godziny_min: v.godziny_min ? Number(v.godziny_min) : null,
+        godziny_max: v.godziny_max ? Number(v.godziny_max) : null,
+        stawka_h: v.stawka_h ? Number(v.stawka_h) : null,
+        status: v.status,
+      }).eq("id", senior.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Dane seniora zaktualizowane");
+      qc.invalidateQueries({ queryKey: ["seniors"] });
+      onSaved();
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Edytuj dane seniora</DialogTitle>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((v) => mut.mutate(v))} className="space-y-5">
+
+            {/* Dane osobowe */}
+            <FormSection title="Dane osobowe">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FField form={form} name="imie" label="Imię *" />
+                <FField form={form} name="nazwisko" label="Nazwisko *" />
+                <FField form={form} name="telefon" label="Telefon" placeholder="np. 500 100 200" />
+                <FField form={form} name="telefon_rodziny" label="Telefon rodziny" />
+                <FormField control={form.control} name="status" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Status *</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="aktywny">Aktywny</SelectItem>
+                        <SelectItem value="wygasa">Wygasa</SelectItem>
+                        <SelectItem value="nieaktywny">Nieaktywny</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+            </FormSection>
+
+            {/* Adres */}
+            <FormSection title="Adres i lokalizacja">
+              <FField form={form} name="adres" label="Adres *" />
+              <p className="text-xs text-muted-foreground">
+                Współrzędne znajdziesz klikając prawym przyciskiem na Google Maps.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <FField form={form} name="lat" label="Szerokość (lat)" placeholder="54.3520" />
+                <FField form={form} name="lng" label="Długość (lng)" placeholder="18.6466" />
+              </div>
+            </FormSection>
+
+            {/* NFC i notatki */}
+            <FormSection title="NFC i notatka techniczna">
+              <FField form={form} name="nfc_uid" label="NFC UID" placeholder="Wpisz po przetestowaniu tagu" />
+              <FormField control={form.control} name="notatka_techniczna" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Notatka techniczna</FormLabel>
+                  <FormControl>
+                    <Textarea rows={3} placeholder="Kod do domofonu, miejsce kluczy..." {...field} value={field.value ?? ""} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </FormSection>
+
+            {/* Decyzja MOPS */}
+            <FormSection title="Decyzja MOPS">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <FField form={form} name="decyzja_nr" label="Numer decyzji" />
+                <FField form={form} name="decyzja_data" label="Data decyzji" type="date" />
+                <FField form={form} name="decyzja_od" label="Obowiązuje od" type="date" />
+                <FField form={form} name="decyzja_do" label="Obowiązuje do" type="date" />
+              </div>
+            </FormSection>
+
+            {/* Godziny i stawka */}
+            <FormSection title="Godziny i stawka">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <FField form={form} name="godziny_min" label="Godziny min" type="number" />
+                <FField form={form} name="godziny_max" label="Godziny max" type="number" />
+                <FField form={form} name="stawka_h" label="Stawka godz. (zł)" type="number" step="0.01" />
+              </div>
+            </FormSection>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose} disabled={mut.isPending}>
+                Anuluj
+              </Button>
+              <Button type="submit" disabled={mut.isPending}>
+                {mut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Zapisz zmiany
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Pomocniczy komponent sekcji formularza ───────────────────────────────────
+
+// Lekka sekcja dla formularza edycji (bez ikony)
+function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+      <h3 className="text-sm font-semibold">{title}</h3>
+      {children}
+    </div>
+  );
+}
+
+function FField({
+  form,
+  name,
+  label,
+  placeholder,
+  type = "text",
+  step,
+}: {
+  form: ReturnType<typeof useForm<EditForm>>;
+  name: keyof EditForm;
+  label: string;
+  placeholder?: string;
+  type?: string;
+  step?: string;
+}) {
+  return (
+    <FormField
+      control={form.control}
+      name={name}
+      render={({ field }) => (
+        <FormItem>
+          <FormLabel>{label}</FormLabel>
+          <FormControl>
+            <Input
+              type={type}
+              step={step}
+              placeholder={placeholder}
+              {...field}
+              value={field.value as string ?? ""}
+            />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
 type SeniorDetail = {
   id: string;
   imie: string;
@@ -111,6 +389,8 @@ const VISIT_STATUS_TONE: Record<string, string> = {
 
 function SeniorDetailPage() {
   const { id } = Route.useParams();
+  const qc = useQueryClient();
+  const [editOpen, setEditOpen] = useState(false);
 
   const { data: senior, isLoading } = useQuery({
     queryKey: ["seniors", "detail", id],
@@ -198,6 +478,15 @@ function SeniorDetailPage() {
             </Badge>
           </div>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setEditOpen(true)}
+          className="flex-shrink-0"
+        >
+          <Pencil className="h-4 w-4" />
+          Edytuj dane
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -274,7 +563,7 @@ function SeniorDetailPage() {
           icon={<FileText className="h-4 w-4" />}
           className="lg:col-span-2"
         >
-          <PlanWsparcia plan={senior.plan_wsparcia} />
+          <PlanWsparcia seniorId={senior.id} plan={senior.plan_wsparcia} />
         </Section>
 
         <Section
@@ -297,6 +586,18 @@ function SeniorDetailPage() {
           </Section>
         )}
       </div>
+
+      {/* Dialog edycji */}
+      {editOpen && (
+        <EditSeniorDialog
+          senior={senior}
+          open={editOpen}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ["seniors", "detail", id] });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -342,29 +643,87 @@ function SaldoBlock({
   );
 }
 
-function PlanWsparcia({ plan }: { plan: unknown }) {
+function PlanWsparcia({ seniorId, plan }: { seniorId: string; plan: unknown }) {
+  const qc = useQueryClient();
+  const [newItem, setNewItem] = useState("");
+  const [saving, setSaving] = useState(false);
+
   const items = Array.isArray(plan)
     ? (plan as unknown[]).map((v) => String(v)).filter(Boolean)
     : [];
-  if (items.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Brak zdefiniowanego planu wsparcia. Uzupełnij listę czynności w kartotece, aby pojawiły się
-        jako pre-fill przy planowaniu wizyt.
-      </p>
-    );
-  }
+
+  const saveItems = async (updated: string[]) => {
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from("seniors")
+        .update({ plan_wsparcia: updated })
+        .eq("id", seniorId);
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["seniors", "detail", seniorId] });
+      toast.success("Plan wsparcia zaktualizowany");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addItem = async () => {
+    const val = newItem.trim();
+    if (!val) return;
+    await saveItems([...items, val]);
+    setNewItem("");
+  };
+
+  const removeItem = async (i: number) => {
+    await saveItems(items.filter((_, idx) => idx !== i));
+  };
+
   return (
-    <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-      {items.map((t, i) => (
-        <li
-          key={i}
-          className="rounded-md border bg-muted/30 px-3 py-2 text-sm text-foreground"
+    <div className="space-y-3">
+      {items.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          Brak czynności. Dodaj pierwszą poniżej.
+        </p>
+      )}
+      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {items.map((t, i) => (
+          <li
+            key={i}
+            className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-sm"
+          >
+            <span>• {t}</span>
+            <button
+              onClick={() => removeItem(i)}
+              disabled={saving}
+              className="ml-2 flex-shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+              title="Usuń czynność"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="flex gap-2">
+        <Input
+          value={newItem}
+          onChange={(e) => setNewItem(e.target.value)}
+          placeholder="Nowa czynność (np. Pomoc w higienie)"
+          className="h-8 text-sm"
+          onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addItem())}
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={addItem}
+          disabled={saving || !newItem.trim()}
         >
-          • {t}
-        </li>
-      ))}
-    </ul>
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+          Dodaj
+        </Button>
+      </div>
+    </div>
   );
 }
 
