@@ -19,7 +19,7 @@ import { Route as AuthenticatedCoordinatorWizytyRouteImport } from './routes/_au
 import { Route as AuthenticatedCoordinatorSeniorzyRouteImport } from './routes/_authenticated/_coordinator/seniorzy'
 import { Route as AuthenticatedCoordinatorRaportyRouteImport } from './routes/_authenticated/_coordinator/raporty'
 import { Route as AuthenticatedCoordinatorPulpitRouteImport } from './routes/_authenticated/_coordinator/pulpit'
-import { Route as AuthenticatedCoordinatorSeniorzyIdRouteImport } from './routes/_authenticated/_coordinator/seniorzy.$id'
+import { Route as AuthenticatedCoordinatorSeniorzyIdRouteImport } from './routes/_authenticated/_coordinator/seniorzy_.$id'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -76,9 +76,9 @@ const AuthenticatedCoordinatorPulpitRoute =
   } as any)
 const AuthenticatedCoordinatorSeniorzyIdRoute =
   AuthenticatedCoordinatorSeniorzyIdRouteImport.update({
-    id: '/$id',
-    path: '/$id',
-    getParentRoute: () => AuthenticatedCoordinatorSeniorzyRoute,
+    id: '/seniorzy_/$id',
+    path: '/seniorzy/$id',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -88,7 +88,7 @@ export interface FileRoutesByFullPath {
   '/opiekun': typeof AuthenticatedOpiekunRoute
   '/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/raporty': typeof AuthenticatedCoordinatorRaportyRoute
-  '/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRouteWithChildren
+  '/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRoute
   '/wizyty': typeof AuthenticatedCoordinatorWizytyRoute
   '/seniorzy/$id': typeof AuthenticatedCoordinatorSeniorzyIdRoute
 }
@@ -99,7 +99,7 @@ export interface FileRoutesByTo {
   '/opiekun': typeof AuthenticatedOpiekunRoute
   '/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/raporty': typeof AuthenticatedCoordinatorRaportyRoute
-  '/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRouteWithChildren
+  '/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRoute
   '/wizyty': typeof AuthenticatedCoordinatorWizytyRoute
   '/seniorzy/$id': typeof AuthenticatedCoordinatorSeniorzyIdRoute
 }
@@ -113,9 +113,9 @@ export interface FileRoutesById {
   '/_authenticated/opiekun': typeof AuthenticatedOpiekunRoute
   '/_authenticated/_coordinator/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/_authenticated/_coordinator/raporty': typeof AuthenticatedCoordinatorRaportyRoute
-  '/_authenticated/_coordinator/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRouteWithChildren
+  '/_authenticated/_coordinator/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRoute
   '/_authenticated/_coordinator/wizyty': typeof AuthenticatedCoordinatorWizytyRoute
-  '/_authenticated/_coordinator/seniorzy/$id': typeof AuthenticatedCoordinatorSeniorzyIdRoute
+  '/_authenticated/_coordinator/seniorzy_/$id': typeof AuthenticatedCoordinatorSeniorzyIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -152,7 +152,7 @@ export interface FileRouteTypes {
     | '/_authenticated/_coordinator/raporty'
     | '/_authenticated/_coordinator/seniorzy'
     | '/_authenticated/_coordinator/wizyty'
-    | '/_authenticated/_coordinator/seniorzy/$id'
+    | '/_authenticated/_coordinator/seniorzy_/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -233,36 +233,22 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorPulpitRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
-    '/_authenticated/_coordinator/seniorzy/$id': {
-      id: '/_authenticated/_coordinator/seniorzy/$id'
-      path: '/$id'
+    '/_authenticated/_coordinator/seniorzy_/$id': {
+      id: '/_authenticated/_coordinator/seniorzy_/$id'
+      path: '/seniorzy/$id'
       fullPath: '/seniorzy/$id'
       preLoaderRoute: typeof AuthenticatedCoordinatorSeniorzyIdRouteImport
-      parentRoute: typeof AuthenticatedCoordinatorSeniorzyRoute
+      parentRoute: typeof AuthenticatedCoordinatorRoute
     }
   }
 }
 
-interface AuthenticatedCoordinatorSeniorzyRouteChildren {
-  AuthenticatedCoordinatorSeniorzyIdRoute: typeof AuthenticatedCoordinatorSeniorzyIdRoute
-}
-
-const AuthenticatedCoordinatorSeniorzyRouteChildren: AuthenticatedCoordinatorSeniorzyRouteChildren =
-  {
-    AuthenticatedCoordinatorSeniorzyIdRoute:
-      AuthenticatedCoordinatorSeniorzyIdRoute,
-  }
-
-const AuthenticatedCoordinatorSeniorzyRouteWithChildren =
-  AuthenticatedCoordinatorSeniorzyRoute._addFileChildren(
-    AuthenticatedCoordinatorSeniorzyRouteChildren,
-  )
-
 interface AuthenticatedCoordinatorRouteChildren {
   AuthenticatedCoordinatorPulpitRoute: typeof AuthenticatedCoordinatorPulpitRoute
   AuthenticatedCoordinatorRaportyRoute: typeof AuthenticatedCoordinatorRaportyRoute
-  AuthenticatedCoordinatorSeniorzyRoute: typeof AuthenticatedCoordinatorSeniorzyRouteWithChildren
+  AuthenticatedCoordinatorSeniorzyRoute: typeof AuthenticatedCoordinatorSeniorzyRoute
   AuthenticatedCoordinatorWizytyRoute: typeof AuthenticatedCoordinatorWizytyRoute
+  AuthenticatedCoordinatorSeniorzyIdRoute: typeof AuthenticatedCoordinatorSeniorzyIdRoute
 }
 
 const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildren =
@@ -270,8 +256,10 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
     AuthenticatedCoordinatorPulpitRoute: AuthenticatedCoordinatorPulpitRoute,
     AuthenticatedCoordinatorRaportyRoute: AuthenticatedCoordinatorRaportyRoute,
     AuthenticatedCoordinatorSeniorzyRoute:
-      AuthenticatedCoordinatorSeniorzyRouteWithChildren,
+      AuthenticatedCoordinatorSeniorzyRoute,
     AuthenticatedCoordinatorWizytyRoute: AuthenticatedCoordinatorWizytyRoute,
+    AuthenticatedCoordinatorSeniorzyIdRoute:
+      AuthenticatedCoordinatorSeniorzyIdRoute,
   }
 
 const AuthenticatedCoordinatorRouteWithChildren =
@@ -302,3 +290,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

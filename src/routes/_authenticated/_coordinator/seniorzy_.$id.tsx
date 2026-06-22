@@ -30,7 +30,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-export const Route = createFileRoute("/_authenticated/_coordinator/seniorzy/$id")({
+export const Route = createFileRoute("/_authenticated/_coordinator/seniorzy_/$id")({
   component: SeniorDetailPage,
   errorComponent: ({ error, reset }) => {
     const router = useRouter();
