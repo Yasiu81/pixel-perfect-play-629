@@ -144,6 +144,9 @@ function VisitDetailPanel({
   const [newCaregiver, setNewCaregiver] = useState(visit.caregiver_id ?? NO_CAREGIVER);
   const [editingNotes, setEditingNotes] = useState(false);
   const [newNotes, setNewNotes] = useState(visit.notes ?? "");
+  const [editingTime, setEditingTime] = useState(false);
+  const [newStart, setNewStart] = useState(visit.planned_start.slice(0, 16));
+  const [newEnd, setNewEnd] = useState(visit.planned_end.slice(0, 16));
   const [saving, setSaving] = useState(false);
 
   const senior = visit.senior;
@@ -282,38 +285,87 @@ function VisitDetailPanel({
           </div>
 
           {/* Czas */}
-          <div className="rounded-lg border bg-card p-4 space-y-2">
+          <div className="rounded-lg border bg-card p-4 space-y-3">
             <h3 className="text-sm font-semibold flex items-center gap-2">
               <Clock className="h-4 w-4" /> Czas realizacji
             </h3>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <div className="text-xs text-muted-foreground uppercase tracking-wide">Planowany start</div>
-                <div>{formatDateTime(visit.planned_start)}</div>
+            {editingTime ? (
+              <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-2">
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wide">Planowany start</label>
+                    <input
+                      type="datetime-local"
+                      value={newStart}
+                      onChange={(e) => setNewStart(e.target.value)}
+                      className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground uppercase tracking-wide">Planowany koniec</label>
+                    <input
+                      type="datetime-local"
+                      value={newEnd}
+                      onChange={(e) => setNewEnd(e.target.value)}
+                      className="mt-1 w-full rounded-md border bg-background px-3 py-1.5 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" disabled={saving} onClick={() => {
+                    if (new Date(newEnd) <= new Date(newStart)) {
+                      toast.error("Koniec musi być po starcie");
+                      return;
+                    }
+                    save({
+                      planned_start: new Date(newStart).toISOString(),
+                      planned_end: new Date(newEnd).toISOString(),
+                    });
+                    setEditingTime(false);
+                  }}>
+                    {saving && <Loader2 className="h-3 w-3 animate-spin" />}
+                    Zapisz
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setEditingTime(false)}>
+                    Anuluj
+                  </Button>
+                </div>
               </div>
-              <div>
-                <div className="text-xs text-muted-foreground uppercase tracking-wide">Planowany koniec</div>
-                <div>{formatTime(visit.planned_end)}</div>
-              </div>
-              {visit.actual_start && (
-                <div>
-                  <div className="text-xs text-muted-foreground uppercase tracking-wide">Faktyczny start (NFC)</div>
-                  <div className="text-emerald-700">{formatDateTime(visit.actual_start)}</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="text-xs text-muted-foreground uppercase tracking-wide">Planowany start</div>
+                    <div>{formatDateTime(visit.planned_start)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground uppercase tracking-wide">Planowany koniec</div>
+                    <div>{formatTime(visit.planned_end)}</div>
+                  </div>
+                  {visit.actual_start && (
+                    <div>
+                      <div className="text-xs text-muted-foreground uppercase tracking-wide">Faktyczny start (NFC)</div>
+                      <div className="text-emerald-700">{formatDateTime(visit.actual_start)}</div>
+                    </div>
+                  )}
+                  {visit.actual_end && (
+                    <div>
+                      <div className="text-xs text-muted-foreground uppercase tracking-wide">Faktyczny koniec (NFC)</div>
+                      <div className="text-emerald-700">{formatTime(visit.actual_end)}</div>
+                    </div>
+                  )}
+                  {visit.hours_billed != null && visit.hours_billed > 0 && (
+                    <div className="col-span-2">
+                      <div className="text-xs text-muted-foreground uppercase tracking-wide">Godziny rozliczeniowe</div>
+                      <div className="text-lg font-semibold">{visit.hours_billed} h</div>
+                    </div>
+                  )}
                 </div>
-              )}
-              {visit.actual_end && (
-                <div>
-                  <div className="text-xs text-muted-foreground uppercase tracking-wide">Faktyczny koniec (NFC)</div>
-                  <div className="text-emerald-700">{formatTime(visit.actual_end)}</div>
-                </div>
-              )}
-              {visit.hours_billed != null && visit.hours_billed > 0 && (
-                <div className="col-span-2">
-                  <div className="text-xs text-muted-foreground uppercase tracking-wide">Godziny rozliczeniowe</div>
-                  <div className="text-lg font-semibold">{visit.hours_billed} h</div>
-                </div>
-              )}
-            </div>
+                <Button size="sm" variant="outline" onClick={() => setEditingTime(true)}>
+                  Zmień termin
+                </Button>
+              </>
+            )}
           </div>
 
           {/* Czynności */}

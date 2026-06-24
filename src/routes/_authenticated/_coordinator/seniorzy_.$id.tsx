@@ -130,6 +130,7 @@ const editSchema = z.object({
     (v) => !v || (!Number.isNaN(Number(v)) && Number(v) >= 0 && Number(v) <= 1000), "Liczba 0–1000"
   ),
   status: z.enum(["aktywny", "wygasa", "nieaktywny"]),
+  opiekun_id: z.string().optional().or(z.literal("")),
 });
 
 type EditForm = z.infer<typeof editSchema>;
@@ -148,6 +149,25 @@ function EditSeniorDialog({
   onSaved: () => void;
 }) {
   const qc = useQueryClient();
+
+  // Lista opiekunów do dropdownu
+  const { data: caregivers } = useQuery({
+    queryKey: ["caregivers-list"],
+    queryFn: async () => {
+      const { data: roles } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .eq("role", "caregiver");
+      const ids = (roles ?? []).map((r) => r.user_id);
+      if (ids.length === 0) return [];
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, imie, nazwisko")
+        .in("id", ids)
+        .order("nazwisko");
+      return data ?? [];
+    },
+  });
 
   const form = useForm<EditForm>({
     resolver: zodResolver(editSchema),
@@ -169,6 +189,7 @@ function EditSeniorDialog({
       godziny_max: senior.godziny_max != null ? String(senior.godziny_max) : "",
       stawka_h: senior.stawka_h != null ? String(senior.stawka_h) : "",
       status: senior.status,
+      opiekun_id: senior.opiekun_id ?? "",
     },
   });
 
@@ -192,6 +213,7 @@ function EditSeniorDialog({
         godziny_max: v.godziny_max ? Number(v.godziny_max) : null,
         stawka_h: v.stawka_h ? Number(v.stawka_h) : null,
         status: v.status,
+        opiekun_id: v.opiekun_id || null,
       }).eq("id", senior.id);
       if (error) throw error;
     },
@@ -282,6 +304,38 @@ function EditSeniorDialog({
               </div>
             </FormSection>
 
+            {/* Przypisany opiekun */}
+            <FormSection title="Przypisany opiekun">
+              <FormField
+                control={form.control}
+                name="opiekun_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Opiekun</FormLabel>
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value ?? ""}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Nie przypisano" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="">Nie przypisano</SelectItem>
+                        {(caregivers ?? []).map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.imie} {c.nazwisko}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FormSection>
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose} disabled={mut.isPending}>
                 Anuluj
@@ -369,6 +423,7 @@ type SeniorDetail = {
   status: SeniorStatus;
   pesel_last2: string | null;
   plan_wsparcia: unknown;
+  opiekun_id: string | null;
 };
 
 type VisitRow = {
@@ -398,7 +453,7 @@ function SeniorDetailPage() {
       const { data, error } = await supabase
         .from("seniors")
         .select(
-          "id, imie, nazwisko, telefon, telefon_rodziny, adres, lat, lng, nfc_uid, notatka_techniczna, decyzja_nr, decyzja_data, decyzja_od, decyzja_do, godziny_min, godziny_max, stawka_h, status, pesel_last2, plan_wsparcia",
+          "id, imie, nazwisko, telefon, telefon_rodziny, adres, lat, lng, nfc_uid, notatka_techniczna, decyzja_nr, decyzja_data, decyzja_od, decyzja_do, godziny_min, godziny_max, stawka_h, status, pesel_last2, plan_wsparcia, opiekun_id",
         )
         .eq("id", id)
         .maybeSingle();
