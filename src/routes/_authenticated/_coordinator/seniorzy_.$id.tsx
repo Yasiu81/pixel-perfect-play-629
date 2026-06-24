@@ -189,7 +189,7 @@ function EditSeniorDialog({
       godziny_max: senior.godziny_max != null ? String(senior.godziny_max) : "",
       stawka_h: senior.stawka_h != null ? String(senior.stawka_h) : "",
       status: senior.status,
-      opiekun_id: senior.opiekun_id ?? "",
+      opiekun_id: senior.opiekun_id ?? "__none__",
     },
   });
 
@@ -213,7 +213,7 @@ function EditSeniorDialog({
         godziny_max: v.godziny_max ? Number(v.godziny_max) : null,
         stawka_h: v.stawka_h ? Number(v.stawka_h) : null,
         status: v.status,
-        opiekun_id: v.opiekun_id || null,
+        opiekun_id: (v.opiekun_id && v.opiekun_id !== "__none__") ? v.opiekun_id : null,
       }).eq("id", senior.id);
       if (error) throw error;
     },
@@ -314,7 +314,7 @@ function EditSeniorDialog({
                     <FormLabel>Opiekun</FormLabel>
                     <Select
                       onValueChange={field.onChange}
-                      value={field.value ?? ""}
+                      value={field.value ?? "__none__"}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -322,7 +322,7 @@ function EditSeniorDialog({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">Nie przypisano</SelectItem>
+                        <SelectItem value="__none__">Nie przypisano</SelectItem>
                         {(caregivers ?? []).map((c) => (
                           <SelectItem key={c.id} value={c.id}>
                             {c.imie} {c.nazwisko}
