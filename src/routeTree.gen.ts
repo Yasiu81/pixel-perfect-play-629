@@ -19,6 +19,7 @@ import { Route as AuthenticatedCoordinatorWizytyRouteImport } from './routes/_au
 import { Route as AuthenticatedCoordinatorSeniorzyRouteImport } from './routes/_authenticated/_coordinator/seniorzy'
 import { Route as AuthenticatedCoordinatorRaportyRouteImport } from './routes/_authenticated/_coordinator/raporty'
 import { Route as AuthenticatedCoordinatorPulpitRouteImport } from './routes/_authenticated/_coordinator/pulpit'
+import { Route as AuthenticatedCoordinatorOpiekunowieRouteImport } from './routes/_authenticated/_coordinator/opiekunowie'
 import { Route as AuthenticatedCoordinatorSeniorzyIdRouteImport } from './routes/_authenticated/_coordinator/seniorzy_.$id'
 
 const AuthRoute = AuthRouteImport.update({
@@ -74,6 +75,12 @@ const AuthenticatedCoordinatorPulpitRoute =
     path: '/pulpit',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorOpiekunowieRoute =
+  AuthenticatedCoordinatorOpiekunowieRouteImport.update({
+    id: '/opiekunowie',
+    path: '/opiekunowie',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedCoordinatorSeniorzyIdRoute =
   AuthenticatedCoordinatorSeniorzyIdRouteImport.update({
     id: '/seniorzy_/$id',
@@ -86,6 +93,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/app': typeof AuthenticatedAppRoute
   '/opiekun': typeof AuthenticatedOpiekunRoute
+  '/opiekunowie': typeof AuthenticatedCoordinatorOpiekunowieRoute
   '/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/raporty': typeof AuthenticatedCoordinatorRaportyRoute
   '/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRoute
@@ -97,6 +105,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/app': typeof AuthenticatedAppRoute
   '/opiekun': typeof AuthenticatedOpiekunRoute
+  '/opiekunowie': typeof AuthenticatedCoordinatorOpiekunowieRoute
   '/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/raporty': typeof AuthenticatedCoordinatorRaportyRoute
   '/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRoute
@@ -111,6 +120,7 @@ export interface FileRoutesById {
   '/_authenticated/_coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/_authenticated/app': typeof AuthenticatedAppRoute
   '/_authenticated/opiekun': typeof AuthenticatedOpiekunRoute
+  '/_authenticated/_coordinator/opiekunowie': typeof AuthenticatedCoordinatorOpiekunowieRoute
   '/_authenticated/_coordinator/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/_authenticated/_coordinator/raporty': typeof AuthenticatedCoordinatorRaportyRoute
   '/_authenticated/_coordinator/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRoute
@@ -124,6 +134,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/app'
     | '/opiekun'
+    | '/opiekunowie'
     | '/pulpit'
     | '/raporty'
     | '/seniorzy'
@@ -135,6 +146,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/app'
     | '/opiekun'
+    | '/opiekunowie'
     | '/pulpit'
     | '/raporty'
     | '/seniorzy'
@@ -148,6 +160,7 @@ export interface FileRouteTypes {
     | '/_authenticated/_coordinator'
     | '/_authenticated/app'
     | '/_authenticated/opiekun'
+    | '/_authenticated/_coordinator/opiekunowie'
     | '/_authenticated/_coordinator/pulpit'
     | '/_authenticated/_coordinator/raporty'
     | '/_authenticated/_coordinator/seniorzy'
@@ -233,6 +246,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorPulpitRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/_coordinator/opiekunowie': {
+      id: '/_authenticated/_coordinator/opiekunowie'
+      path: '/opiekunowie'
+      fullPath: '/opiekunowie'
+      preLoaderRoute: typeof AuthenticatedCoordinatorOpiekunowieRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/_coordinator/seniorzy_/$id': {
       id: '/_authenticated/_coordinator/seniorzy_/$id'
       path: '/seniorzy/$id'
@@ -244,6 +264,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedCoordinatorRouteChildren {
+  AuthenticatedCoordinatorOpiekunowieRoute: typeof AuthenticatedCoordinatorOpiekunowieRoute
   AuthenticatedCoordinatorPulpitRoute: typeof AuthenticatedCoordinatorPulpitRoute
   AuthenticatedCoordinatorRaportyRoute: typeof AuthenticatedCoordinatorRaportyRoute
   AuthenticatedCoordinatorSeniorzyRoute: typeof AuthenticatedCoordinatorSeniorzyRoute
@@ -253,6 +274,8 @@ interface AuthenticatedCoordinatorRouteChildren {
 
 const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildren =
   {
+    AuthenticatedCoordinatorOpiekunowieRoute:
+      AuthenticatedCoordinatorOpiekunowieRoute,
     AuthenticatedCoordinatorPulpitRoute: AuthenticatedCoordinatorPulpitRoute,
     AuthenticatedCoordinatorRaportyRoute: AuthenticatedCoordinatorRaportyRoute,
     AuthenticatedCoordinatorSeniorzyRoute:
