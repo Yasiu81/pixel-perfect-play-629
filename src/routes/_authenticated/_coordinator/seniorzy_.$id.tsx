@@ -20,6 +20,9 @@ import {
   Pencil,
   Plus,
   X,
+  ChevronLeft,
+  ChevronRight as ChevronRightIcon,
+  Calendar,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -29,6 +32,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -430,8 +434,13 @@ type VisitRow = {
   id: string;
   planned_start: string;
   planned_end: string;
+  actual_start: string | null;
+  actual_end: string | null;
   status: string;
   hours_billed: number | null;
+  notes: string | null;
+  caregiver_id: string | null;
+  tasks: { task_name: string; completed: boolean }[];
 };
 
 const VISIT_STATUS_TONE: Record<string, string> = {
@@ -467,12 +476,14 @@ function SeniorDetailPage() {
     queryFn: async (): Promise<VisitRow[]> => {
       const { data, error } = await supabase
         .from("visits")
-        .select("id, planned_start, planned_end, status, hours_billed")
+        .select(`id, planned_start, planned_end, actual_start, actual_end,
+                 status, hours_billed, notes, caregiver_id,
+                 tasks:visit_tasks(task_name, completed)`)
         .eq("senior_id", id)
         .order("planned_start", { ascending: false })
-        .limit(20);
+        .limit(50);
       if (error) throw error;
-      return (data ?? []) as VisitRow[];
+      return (data ?? []) as unknown as VisitRow[];
     },
   });
 
@@ -516,6 +527,7 @@ function SeniorDetailPage() {
 
   return (
     <div className="space-y-6">
+      {/* Nagłówek */}
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-2">
           <Button asChild variant="ghost" size="sm" className="-ml-2">
@@ -544,103 +556,115 @@ function SeniorDetailPage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Section title="Dane osobowe" icon={<Users className="h-4 w-4" />}>
-          <Field label="Imię" value={senior.imie} />
-          <Field label="Nazwisko" value={senior.nazwisko} />
-          <PeselRow seniorId={senior.id} last2={senior.pesel_last2} />
-          <Field
-            label="Telefon"
-            value={
-              senior.telefon ? (
-                <a className="hover:underline" href={`tel:${senior.telefon}`}>
-                  <Phone className="mr-1 inline h-3.5 w-3.5" />
-                  {senior.telefon}
-                </a>
-              ) : (
-                "—"
-              )
-            }
-          />
-          <Field
-            label="Telefon rodziny"
-            value={
-              senior.telefon_rodziny ? (
-                <a className="hover:underline" href={`tel:${senior.telefon_rodziny}`}>
-                  <Phone className="mr-1 inline h-3.5 w-3.5" />
-                  {senior.telefon_rodziny}
-                </a>
-              ) : (
-                "—"
-              )
-            }
-          />
-        </Section>
+      {/* Zakładki */}
+      <Tabs defaultValue="przeglad">
+        <TabsList>
+          <TabsTrigger value="przeglad">📋 Przegląd</TabsTrigger>
+          <TabsTrigger value="kalendarz">📅 Kalendarz</TabsTrigger>
+          <TabsTrigger value="raporty">📝 Raporty wizyt</TabsTrigger>
+          <TabsTrigger value="dokumenty">📁 Dokumenty</TabsTrigger>
+        </TabsList>
 
-        <Section title="Adres i lokalizacja" icon={<MapPin className="h-4 w-4" />}>
-          <Field label="Adres" value={senior.adres} />
-          <Field label="Szerokość (lat)" value={senior.lat ?? "—"} />
-          <Field label="Długość (lng)" value={senior.lng ?? "—"} />
-          {senior.lat != null && senior.lng != null && (
-            <a
-              href={`https://www.google.com/maps?q=${senior.lat},${senior.lng}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+        {/* ── PRZEGLĄD ── */}
+        <TabsContent value="przeglad" className="mt-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Section title="Dane osobowe" icon={<Users className="h-4 w-4" />}>
+              <Field label="Imię" value={senior.imie} />
+              <Field label="Nazwisko" value={senior.nazwisko} />
+              <PeselRow seniorId={senior.id} last2={senior.pesel_last2} />
+              <Field
+                label="Telefon"
+                value={senior.telefon ? (
+                  <a className="hover:underline" href={`tel:${senior.telefon}`}>
+                    <Phone className="mr-1 inline h-3.5 w-3.5" />
+                    {senior.telefon}
+                  </a>
+                ) : "—"}
+              />
+              <Field
+                label="Telefon rodziny"
+                value={senior.telefon_rodziny ? (
+                  <a className="hover:underline" href={`tel:${senior.telefon_rodziny}`}>
+                    <Phone className="mr-1 inline h-3.5 w-3.5" />
+                    {senior.telefon_rodziny}
+                  </a>
+                ) : "—"}
+              />
+            </Section>
+
+            <Section title="Adres i lokalizacja" icon={<MapPin className="h-4 w-4" />}>
+              <Field label="Adres" value={senior.adres} />
+              <Field label="Szerokość (lat)" value={senior.lat ?? "—"} />
+              <Field label="Długość (lng)" value={senior.lng ?? "—"} />
+              {senior.lat != null && senior.lng != null && (
+                <a
+                  href={`https://www.google.com/maps?q=${senior.lat},${senior.lng}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+                >
+                  Otwórz w Google Maps <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+            </Section>
+
+            <Section title="Decyzja MOPS" icon={<FileText className="h-4 w-4" />}>
+              <Field label="Numer decyzji" value={senior.decyzja_nr || "—"} />
+              <Field label="Data decyzji" value={fmtDate(senior.decyzja_data)} />
+              <Field label="Obowiązuje od" value={fmtDate(senior.decyzja_od)} />
+              <Field label="Obowiązuje do" value={fmtDate(senior.decyzja_do)} />
+            </Section>
+
+            <Section title="Godziny i stawka" icon={<Clock className="h-4 w-4" />}>
+              <SaldoBlock
+                min={senior.godziny_min}
+                max={senior.godziny_max}
+                realized={realizedThisMonth}
+              />
+              <Field
+                label="Stawka godz."
+                value={senior.stawka_h != null ? `${Number(senior.stawka_h).toFixed(2)} zł` : "—"}
+              />
+              <Field label="NFC UID" value={senior.nfc_uid || "—"} />
+            </Section>
+
+            <Section
+              title="Plan wsparcia"
+              icon={<FileText className="h-4 w-4" />}
+              className="lg:col-span-2"
             >
-              Otwórz w Google Maps <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-          )}
-        </Section>
+              <PlanWsparcia seniorId={senior.id} plan={senior.plan_wsparcia} />
+            </Section>
 
-        <Section title="Decyzja MOPS" icon={<FileText className="h-4 w-4" />}>
-          <Field label="Numer decyzji" value={senior.decyzja_nr || "—"} />
-          <Field label="Data decyzji" value={fmtDate(senior.decyzja_data)} />
-          <Field label="Obowiązuje od" value={fmtDate(senior.decyzja_od)} />
-          <Field label="Obowiązuje do" value={fmtDate(senior.decyzja_do)} />
-        </Section>
+            {senior.notatka_techniczna && (
+              <Section
+                title="Notatka techniczna"
+                icon={<StickyNote className="h-4 w-4" />}
+                className="lg:col-span-2"
+              >
+                <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                  {senior.notatka_techniczna}
+                </p>
+              </Section>
+            )}
+          </div>
+        </TabsContent>
 
-        <Section title="Godziny i stawka" icon={<Clock className="h-4 w-4" />}>
-          <SaldoBlock
-            min={senior.godziny_min}
-            max={senior.godziny_max}
-            realized={realizedThisMonth}
-          />
-          <Field
-            label="Stawka godz."
-            value={senior.stawka_h != null ? `${Number(senior.stawka_h).toFixed(2)} zł` : "—"}
-          />
-          <Field label="NFC UID" value={senior.nfc_uid || "—"} />
-        </Section>
+        {/* ── KALENDARZ ── */}
+        <TabsContent value="kalendarz" className="mt-4">
+          <KalendarzTab seniorId={id} seniorName={`${senior.imie} ${senior.nazwisko}`} />
+        </TabsContent>
 
-        <Section
-          title="Plan wsparcia"
-          icon={<FileText className="h-4 w-4" />}
-          className="lg:col-span-2"
-        >
-          <PlanWsparcia seniorId={senior.id} plan={senior.plan_wsparcia} />
-        </Section>
+        {/* ── RAPORTY WIZYT ── */}
+        <TabsContent value="raporty" className="mt-4">
+          <RaportyWizytTab visits={visits ?? []} />
+        </TabsContent>
 
-        <Section
-          title="Historia wizyt"
-          icon={<Clock className="h-4 w-4" />}
-          className="lg:col-span-2"
-        >
-          <VisitsTable visits={visits ?? []} />
-        </Section>
-
-        {senior.notatka_techniczna && (
-          <Section
-            title="Notatka techniczna"
-            icon={<StickyNote className="h-4 w-4" />}
-            className="lg:col-span-2"
-          >
-            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-              {senior.notatka_techniczna}
-            </p>
-          </Section>
-        )}
-      </div>
+        {/* ── DOKUMENTY ── */}
+        <TabsContent value="dokumenty" className="mt-4">
+          <DokumentyTab seniorId={id} />
+        </TabsContent>
+      </Tabs>
 
       {/* Dialog edycji */}
       {editOpen && (
@@ -652,6 +676,446 @@ function SeniorDetailPage() {
             qc.invalidateQueries({ queryKey: ["seniors", "detail", id] });
           }}
         />
+      )}
+    </div>
+  );
+}
+
+// ─── ZAKŁADKA: KALENDARZ ─────────────────────────────────────────────────────
+
+const STATUS_TONE_CAL: Record<string, string> = {
+  planned: "bg-sky-500/15 text-sky-700 border-sky-300",
+  active: "bg-amber-500/15 text-amber-700 border-amber-300",
+  completed: "bg-emerald-500/15 text-emerald-700 border-emerald-300",
+  alert: "bg-red-500/15 text-red-700 border-red-300",
+  requires_verification: "bg-amber-500/15 text-amber-700 border-amber-300",
+};
+const STATUS_LABEL_CAL: Record<string, string> = {
+  planned: "Zaplanowana", active: "W trakcie", completed: "Zakończona",
+  alert: "Alarm", requires_verification: "Do weryfikacji",
+};
+
+function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: string }) {
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+
+  const startOfMonth = new Date(viewYear, viewMonth, 1).toISOString();
+  const endOfMonth = new Date(viewYear, viewMonth + 1, 0, 23, 59, 59).toISOString();
+
+  const { data: visits, isLoading } = useQuery({
+    queryKey: ["senior-calendar", seniorId, viewYear, viewMonth],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("visits")
+        .select("id, planned_start, planned_end, actual_start, actual_end, status, hours_billed, caregiver_id, notes")
+        .eq("senior_id", seniorId)
+        .gte("planned_start", startOfMonth)
+        .lte("planned_start", endOfMonth)
+        .order("planned_start");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const { data: caregivers } = useQuery({
+    queryKey: ["caregivers-names"],
+    queryFn: async () => {
+      const { data } = await supabase.from("profiles").select("id, imie, nazwisko");
+      return data ?? [];
+    },
+  });
+  const cgMap = Object.fromEntries((caregivers ?? []).map((c) => [c.id, `${c.imie} ${c.nazwisko}`]));
+
+  // Buduj siatkę kalendarza
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay(); // 0=Sun
+  const firstMonday = firstDay === 0 ? 6 : firstDay - 1; // przesuń na pon
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+
+  const visitsByDay: Record<number, typeof visits> = {};
+  (visits ?? []).forEach((v) => {
+    const d = new Date(v.planned_start).getDate();
+    if (!visitsByDay[d]) visitsByDay[d] = [];
+    visitsByDay[d]!.push(v);
+  });
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
+    else setViewMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
+    else setViewMonth(m => m + 1);
+  };
+
+  const MONTHS_PL = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec",
+    "Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
+  const DAYS_PL = ["Pon","Wt","Śr","Czw","Pt","Sob","Nd"];
+
+  const totalHours = (visits ?? []).filter(v => v.status === "completed")
+    .reduce((s, v) => s + (v.hours_billed ?? 0), 0);
+
+  return (
+    <div className="space-y-4">
+      {/* Nawigacja */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">{MONTHS_PL[viewMonth]} {viewYear}</h2>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">
+            Zrealizowane: <strong>{totalHours} h</strong>
+          </span>
+          <Button size="sm" variant="outline" onClick={prevMonth}>
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => { setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); }}>
+            Dziś
+          </Button>
+          <Button size="sm" variant="outline" onClick={nextMonth}>
+            <ChevronRightIcon className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Siatka kalendarza */}
+      <div className="rounded-lg border bg-card overflow-hidden">
+        {/* Nagłówki dni */}
+        <div className="grid grid-cols-7 border-b">
+          {DAYS_PL.map(d => (
+            <div key={d} className="py-2 text-center text-xs font-medium text-muted-foreground">
+              {d}
+            </div>
+          ))}
+        </div>
+
+        {/* Komórki */}
+        <div className="grid grid-cols-7">
+          {/* Puste komórki przed pierwszym dniem */}
+          {Array.from({ length: firstMonday }).map((_, i) => (
+            <div key={`empty-${i}`} className="min-h-[80px] border-b border-r bg-muted/20" />
+          ))}
+
+          {/* Dni miesiąca */}
+          {Array.from({ length: daysInMonth }).map((_, i) => {
+            const day = i + 1;
+            const dayVisits = visitsByDay[day] ?? [];
+            const isToday = day === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
+            const col = (firstMonday + i) % 7;
+            const isWeekend = col >= 5;
+
+            return (
+              <div
+                key={day}
+                className={`min-h-[80px] border-b border-r p-1.5 ${isWeekend ? "bg-muted/10" : ""}`}
+              >
+                <div className={`mb-1 flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
+                  isToday ? "bg-primary text-primary-foreground" : "text-foreground"
+                }`}>
+                  {day}
+                </div>
+                <div className="space-y-0.5">
+                  {isLoading ? (
+                    <Skeleton className="h-4 w-full" />
+                  ) : dayVisits.map((v) => (
+                    <div
+                      key={v.id}
+                      className={`rounded border px-1 py-0.5 text-xs truncate ${STATUS_TONE_CAL[v.status] ?? "bg-muted text-muted-foreground border-border"}`}
+                      title={`${new Date(v.planned_start).toLocaleTimeString("pl-PL", {hour:"2-digit",minute:"2-digit"})} – ${new Date(v.planned_end).toLocaleTimeString("pl-PL", {hour:"2-digit",minute:"2-digit"})}${v.caregiver_id && cgMap[v.caregiver_id] ? ` • ${cgMap[v.caregiver_id]}` : ""}`}
+                    >
+                      {new Date(v.planned_start).toLocaleTimeString("pl-PL", {hour:"2-digit",minute:"2-digit"})}
+                      {v.hours_billed ? ` (${v.hours_billed}h)` : ""}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Legenda */}
+      <div className="flex flex-wrap gap-3 text-xs">
+        {Object.entries(STATUS_LABEL_CAL).map(([k, v]) => (
+          <div key={k} className="flex items-center gap-1.5">
+            <div className={`h-3 w-3 rounded border ${STATUS_TONE_CAL[k]}`} />
+            <span>{v}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Lista wizyt miesiąca */}
+      {(visits ?? []).length > 0 && (
+        <div className="rounded-lg border bg-card overflow-hidden">
+          <div className="border-b px-4 py-3">
+            <h3 className="text-sm font-semibold">Lista wizyt — {MONTHS_PL[viewMonth]} {viewYear}</h3>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Data</TableHead>
+                <TableHead>Godziny</TableHead>
+                <TableHead>Opiekun</TableHead>
+                <TableHead>Godz. rozlicz.</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(visits ?? []).map((v) => (
+                <TableRow key={v.id}>
+                  <TableCell>{new Date(v.planned_start).toLocaleDateString("pl-PL")}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">
+                    {new Date(v.planned_start).toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"})}
+                    {" – "}
+                    {new Date(v.planned_end).toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"})}
+                  </TableCell>
+                  <TableCell>{v.caregiver_id ? (cgMap[v.caregiver_id] ?? "—") : "—"}</TableCell>
+                  <TableCell>{v.hours_billed != null ? `${v.hours_billed} h` : "—"}</TableCell>
+                  <TableCell>
+                    <Badge variant="secondary" className={STATUS_TONE_CAL[v.status] ?? ""}>
+                      {STATUS_LABEL_CAL[v.status] ?? v.status}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ZAKŁADKA: RAPORTY WIZYT ──────────────────────────────────────────────────
+
+type VisitWithTasks = {
+  id: string;
+  planned_start: string;
+  planned_end: string;
+  actual_start: string | null;
+  actual_end: string | null;
+  status: string;
+  hours_billed: number | null;
+  notes: string | null;
+  caregiver_id: string | null;
+  tasks: { task_name: string; completed: boolean }[];
+};
+
+function RaportyWizytTab({ visits }: { visits: VisitWithTasks[] }) {
+  const completed = visits.filter((v) => v.status === "completed");
+
+  const { data: caregivers } = useQuery({
+    queryKey: ["caregivers-names"],
+    queryFn: async () => {
+      const { data } = await supabase.from("profiles").select("id, imie, nazwisko");
+      return data ?? [];
+    },
+  });
+  const cgMap = Object.fromEntries((caregivers ?? []).map((c) => [c.id, `${c.imie} ${c.nazwisko}`]));
+
+  if (completed.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
+        Brak zakończonych wizyt do wyświetlenia.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {completed.map((v) => {
+        const completedTasks = v.tasks.filter((t) => t.completed);
+        const pendingTasks = v.tasks.filter((t) => !t.completed);
+        const start = v.actual_start || v.planned_start;
+        const end = v.actual_end || v.planned_end;
+
+        return (
+          <div key={v.id} className="rounded-lg border bg-card overflow-hidden">
+            {/* Nagłówek wizyty */}
+            <div className="flex items-center justify-between border-b bg-muted/30 px-4 py-3">
+              <div>
+                <div className="font-medium text-sm">
+                  {new Date(start).toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {new Date(start).toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"})}
+                  {" – "}
+                  {new Date(end).toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"})}
+                  {v.caregiver_id && cgMap[v.caregiver_id] && ` • ${cgMap[v.caregiver_id]}`}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {v.hours_billed != null && (
+                  <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                    {v.hours_billed} h
+                  </span>
+                )}
+                {v.actual_start && (
+                  <Badge variant="secondary" className="bg-emerald-500/15 text-emerald-700 text-xs">
+                    ✓ NFC
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 space-y-3">
+              {/* Czynności wykonane */}
+              {v.tasks.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                    Czynności ({completedTasks.length}/{v.tasks.length} wykonanych)
+                  </div>
+                  <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                    {v.tasks.map((t, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm">
+                        <div className={`h-4 w-4 rounded-sm border flex items-center justify-center flex-shrink-0 ${
+                          t.completed ? "bg-emerald-500 border-emerald-500 text-white" : "border-muted-foreground/40"
+                        }`}>
+                          {t.completed && <span className="text-xs">✓</span>}
+                        </div>
+                        <span className={t.completed ? "" : "text-muted-foreground line-through"}>
+                          {t.task_name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Notatka opiekuna */}
+              {v.notes && (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                    Notatka opiekuna
+                  </div>
+                  <p className="rounded-md bg-muted/30 px-3 py-2 text-sm text-foreground whitespace-pre-wrap">
+                    {v.notes}
+                  </p>
+                </div>
+              )}
+
+              {/* Czas NFC */}
+              {v.actual_start && (
+                <div className="flex gap-4 text-xs text-muted-foreground border-t pt-2">
+                  <span>Wejście NFC: <strong>{new Date(v.actual_start).toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"})}</strong></span>
+                  {v.actual_end && <span>Wyjście NFC: <strong>{new Date(v.actual_end).toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"})}</strong></span>}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── ZAKŁADKA: DOKUMENTY ─────────────────────────────────────────────────────
+
+function DokumentyTab({ seniorId }: { seniorId: string }) {
+  const [uploading, setUploading] = useState(false);
+  const qc = useQueryClient();
+
+  const { data: docs, isLoading } = useQuery({
+    queryKey: ["senior-documents", seniorId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("senior_documents")
+        .select("id, name, file_path, file_type, created_at")
+        .eq("senior_id", seniorId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const path = `senior-docs/${seniorId}/${Date.now()}-${file.name}`;
+      const { error: uploadErr } = await supabase.storage
+        .from("documents")
+        .upload(path, file);
+      if (uploadErr) throw uploadErr;
+      const { error: dbErr } = await supabase.from("senior_documents").insert({
+        senior_id: seniorId,
+        name: file.name,
+        file_path: path,
+        file_type: file.type,
+      });
+      if (dbErr) throw dbErr;
+      toast.success("Dokument wgrany");
+      qc.invalidateQueries({ queryKey: ["senior-documents", seniorId] });
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleDownload = async (path: string, name: string) => {
+    const { data } = await supabase.storage.from("documents").createSignedUrl(path, 60);
+    if (data?.signedUrl) {
+      const a = document.createElement("a");
+      a.href = data.signedUrl;
+      a.download = name;
+      a.click();
+    }
+  };
+
+  const handleDelete = async (id: string, path: string) => {
+    if (!confirm("Usunąć ten dokument?")) return;
+    await supabase.storage.from("documents").remove([path]);
+    await supabase.from("senior_documents").delete().eq("id", id);
+    toast.success("Dokument usunięty");
+    qc.invalidateQueries({ queryKey: ["senior-documents", seniorId] });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Decyzje MOPS, umowy, zgody RODO, dokumentacja medyczna.
+        </p>
+        <label className={`cursor-pointer inline-flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm font-medium shadow-sm hover:bg-muted transition-colors ${uploading ? "opacity-50 cursor-not-allowed" : ""}`}>
+          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          Wgraj dokument
+          <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
+        </label>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : !docs || docs.length === 0 ? (
+        <div className="rounded-lg border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
+          Brak dokumentów. Wgraj pierwszy klikając przycisk powyżej.
+        </div>
+      ) : (
+        <div className="rounded-lg border bg-card divide-y">
+          {docs.map((doc) => (
+            <div key={doc.id} className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{doc.name}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {new Date(doc.created_at).toLocaleDateString("pl-PL")}
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <Button size="sm" variant="outline" onClick={() => handleDownload(doc.file_path, doc.name)}>
+                  Pobierz
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => handleDelete(doc.id, doc.file_path)} className="text-destructive hover:text-destructive">
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
