@@ -9,9 +9,12 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as StrefaRouteImport } from './routes/strefa'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as StrefaPulpitRouteImport } from './routes/strefa/pulpit'
+import { Route as StrefaLogowanieRouteImport } from './routes/strefa/logowanie'
 import { Route as AuthenticatedOpiekunRouteImport } from './routes/_authenticated/opiekun'
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/_coordinator'
@@ -22,6 +25,11 @@ import { Route as AuthenticatedCoordinatorPulpitRouteImport } from './routes/_au
 import { Route as AuthenticatedCoordinatorOpiekunowieRouteImport } from './routes/_authenticated/_coordinator/opiekunowie'
 import { Route as AuthenticatedCoordinatorSeniorzyIdRouteImport } from './routes/_authenticated/_coordinator/seniorzy_.$id'
 
+const StrefaRoute = StrefaRouteImport.update({
+  id: '/strefa',
+  path: '/strefa',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
@@ -35,6 +43,16 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const StrefaPulpitRoute = StrefaPulpitRouteImport.update({
+  id: '/pulpit',
+  path: '/pulpit',
+  getParentRoute: () => StrefaRoute,
+} as any)
+const StrefaLogowanieRoute = StrefaLogowanieRouteImport.update({
+  id: '/logowanie',
+  path: '/logowanie',
+  getParentRoute: () => StrefaRoute,
 } as any)
 const AuthenticatedOpiekunRoute = AuthenticatedOpiekunRouteImport.update({
   id: '/opiekun',
@@ -91,8 +109,11 @@ const AuthenticatedCoordinatorSeniorzyIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/strefa': typeof StrefaRouteWithChildren
   '/app': typeof AuthenticatedAppRoute
   '/opiekun': typeof AuthenticatedOpiekunRoute
+  '/strefa/logowanie': typeof StrefaLogowanieRoute
+  '/strefa/pulpit': typeof StrefaPulpitRoute
   '/opiekunowie': typeof AuthenticatedCoordinatorOpiekunowieRoute
   '/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/raporty': typeof AuthenticatedCoordinatorRaportyRoute
@@ -103,8 +124,11 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/strefa': typeof StrefaRouteWithChildren
   '/app': typeof AuthenticatedAppRoute
   '/opiekun': typeof AuthenticatedOpiekunRoute
+  '/strefa/logowanie': typeof StrefaLogowanieRoute
+  '/strefa/pulpit': typeof StrefaPulpitRoute
   '/opiekunowie': typeof AuthenticatedCoordinatorOpiekunowieRoute
   '/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/raporty': typeof AuthenticatedCoordinatorRaportyRoute
@@ -117,9 +141,12 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/strefa': typeof StrefaRouteWithChildren
   '/_authenticated/_coordinator': typeof AuthenticatedCoordinatorRouteWithChildren
   '/_authenticated/app': typeof AuthenticatedAppRoute
   '/_authenticated/opiekun': typeof AuthenticatedOpiekunRoute
+  '/strefa/logowanie': typeof StrefaLogowanieRoute
+  '/strefa/pulpit': typeof StrefaPulpitRoute
   '/_authenticated/_coordinator/opiekunowie': typeof AuthenticatedCoordinatorOpiekunowieRoute
   '/_authenticated/_coordinator/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/_authenticated/_coordinator/raporty': typeof AuthenticatedCoordinatorRaportyRoute
@@ -132,8 +159,11 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/strefa'
     | '/app'
     | '/opiekun'
+    | '/strefa/logowanie'
+    | '/strefa/pulpit'
     | '/opiekunowie'
     | '/pulpit'
     | '/raporty'
@@ -144,8 +174,11 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/strefa'
     | '/app'
     | '/opiekun'
+    | '/strefa/logowanie'
+    | '/strefa/pulpit'
     | '/opiekunowie'
     | '/pulpit'
     | '/raporty'
@@ -157,9 +190,12 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/strefa'
     | '/_authenticated/_coordinator'
     | '/_authenticated/app'
     | '/_authenticated/opiekun'
+    | '/strefa/logowanie'
+    | '/strefa/pulpit'
     | '/_authenticated/_coordinator/opiekunowie'
     | '/_authenticated/_coordinator/pulpit'
     | '/_authenticated/_coordinator/raporty'
@@ -172,10 +208,18 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  StrefaRoute: typeof StrefaRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/strefa': {
+      id: '/strefa'
+      path: '/strefa'
+      fullPath: '/strefa'
+      preLoaderRoute: typeof StrefaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth': {
       id: '/auth'
       path: '/auth'
@@ -196,6 +240,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/strefa/pulpit': {
+      id: '/strefa/pulpit'
+      path: '/pulpit'
+      fullPath: '/strefa/pulpit'
+      preLoaderRoute: typeof StrefaPulpitRouteImport
+      parentRoute: typeof StrefaRoute
+    }
+    '/strefa/logowanie': {
+      id: '/strefa/logowanie'
+      path: '/logowanie'
+      fullPath: '/strefa/logowanie'
+      preLoaderRoute: typeof StrefaLogowanieRouteImport
+      parentRoute: typeof StrefaRoute
     }
     '/_authenticated/opiekun': {
       id: '/_authenticated/opiekun'
@@ -305,10 +363,24 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
 const AuthenticatedRouteRouteWithChildren =
   AuthenticatedRouteRoute._addFileChildren(AuthenticatedRouteRouteChildren)
 
+interface StrefaRouteChildren {
+  StrefaLogowanieRoute: typeof StrefaLogowanieRoute
+  StrefaPulpitRoute: typeof StrefaPulpitRoute
+}
+
+const StrefaRouteChildren: StrefaRouteChildren = {
+  StrefaLogowanieRoute: StrefaLogowanieRoute,
+  StrefaPulpitRoute: StrefaPulpitRoute,
+}
+
+const StrefaRouteWithChildren =
+  StrefaRoute._addFileChildren(StrefaRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  StrefaRoute: StrefaRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

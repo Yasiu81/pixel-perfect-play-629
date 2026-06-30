@@ -563,6 +563,7 @@ function SeniorDetailPage() {
           <TabsTrigger value="kalendarz">📅 Kalendarz</TabsTrigger>
           <TabsTrigger value="raporty">📝 Raporty wizyt</TabsTrigger>
           <TabsTrigger value="dokumenty">📁 Dokumenty</TabsTrigger>
+          <TabsTrigger value="rodzina">👨‍👩‍👧 Rodzina</TabsTrigger>
         </TabsList>
 
         {/* ── PRZEGLĄD ── */}
@@ -663,6 +664,11 @@ function SeniorDetailPage() {
         {/* ── DOKUMENTY ── */}
         <TabsContent value="dokumenty" className="mt-4">
           <DokumentyTab seniorId={id} />
+        </TabsContent>
+
+        {/* ── RODZINA ── */}
+        <TabsContent value="rodzina" className="mt-4">
+          <RodzinaTab seniorId={id} />
         </TabsContent>
       </Tabs>
 
@@ -1118,6 +1124,205 @@ function DokumentyTab({ seniorId }: { seniorId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── ZAKŁADKA: RODZINA ────────────────────────────────────────────────────────
+
+type FamilyAccessRow = {
+  id: string;
+  user_id: string;
+  relacja: string | null;
+  created_at: string;
+  email?: string;
+};
+
+const inviteSchema = z.object({
+  email: z.string().trim().email("Niepoprawny adres e-mail"),
+  password: z.string().min(8, "Minimum 8 znaków"),
+  relacja: z.string().trim().min(1, "Wymagane").max(50),
+});
+
+type InviteForm = z.infer<typeof inviteSchema>;
+
+function RodzinaTab({ seniorId }: { seniorId: string }) {
+  const qc = useQueryClient();
+  const [inviteOpen, setInviteOpen] = useState(false);
+
+  const { data: accessList, isLoading } = useQuery({
+    queryKey: ["family-access", seniorId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("family_access")
+        .select("id, user_id, relacja, created_at")
+        .eq("senior_id", seniorId);
+      if (error) throw error;
+      return data as FamilyAccessRow[];
+    },
+  });
+
+  const removeMut = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("family_access").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Dostęp odebrany");
+      qc.invalidateQueries({ queryKey: ["family-access", seniorId] });
+    },
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          Osoby z rodziny mające dostęp do podglądu wizyt, raportów i dokumentów tego seniora w Strefie Klienta.
+        </p>
+        <Button size="sm" onClick={() => setInviteOpen(true)}>
+          <Plus className="h-4 w-4" />
+          Zaproś rodzinę
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-20 w-full" />
+      ) : !accessList || accessList.length === 0 ? (
+        <div className="rounded-lg border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
+          Nikt z rodziny nie ma jeszcze dostępu. Kliknij "Zaproś rodzinę" aby utworzyć konto.
+        </div>
+      ) : (
+        <div className="rounded-lg border bg-card divide-y">
+          {accessList.map((a) => (
+            <div key={a.id} className="flex items-center justify-between px-4 py-3">
+              <div>
+                <div className="text-sm font-medium">{a.relacja || "Członek rodziny"}</div>
+                <div className="text-xs text-muted-foreground">
+                  Dostęp od {new Date(a.created_at).toLocaleDateString("pl-PL")}
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-destructive hover:text-destructive"
+                onClick={() => {
+                  if (confirm("Odebrać dostęp tej osobie?")) removeMut.mutate(a.id);
+                }}
+              >
+                <X className="h-4 w-4" />
+                Odbierz dostęp
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {inviteOpen && (
+        <InviteFamilyDialog
+          seniorId={seniorId}
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function InviteFamilyDialog({
+  seniorId,
+  open,
+  onClose,
+}: {
+  seniorId: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const form = useForm<InviteForm>({
+    resolver: zodResolver(inviteSchema),
+    defaultValues: { email: "", password: "", relacja: "" },
+  });
+
+  const mut = useMutation({
+    mutationFn: async (v: InviteForm) => {
+      // 1. Zarejestruj konto (Supabase Auth)
+      const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+        email: v.email.trim(),
+        password: v.password,
+      });
+      if (signUpErr) throw signUpErr;
+      if (!signUpData.user) throw new Error("Nie udało się utworzyć konta");
+
+      // 2. Nadaj rolę family
+      const { error: roleErr } = await supabase.from("user_roles").insert({
+        user_id: signUpData.user.id,
+        role: "family",
+      });
+      if (roleErr) throw roleErr;
+
+      // 3. Przypisz dostęp do seniora
+      const { error: accessErr } = await supabase.from("family_access").insert({
+        senior_id: seniorId,
+        user_id: signUpData.user.id,
+        relacja: v.relacja.trim(),
+      });
+      if (accessErr) throw accessErr;
+    },
+    onSuccess: (_data, v) => {
+      toast.success(`Konto utworzone! Przekaż dane logowania: ${v.email} / ${v.password}`);
+      qc.invalidateQueries({ queryKey: ["family-access", seniorId] });
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Zaproś rodzinę do Strefy Klienta</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Utworzymy konto logowania. Hasło przekaż osobiście lub telefonicznie — nie jest wysyłane automatycznie.
+        </p>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((v) => mut.mutate(v))} className="space-y-4">
+            <FormField control={form.control} name="relacja" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Relacja do seniora *</FormLabel>
+                <FormControl><Input placeholder="np. córka, syn, mąż" {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="email" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Adres e-mail *</FormLabel>
+                <FormControl><Input type="email" placeholder="rodzina@email.pl" {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="password" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Hasło tymczasowe *</FormLabel>
+                <FormControl><Input type="text" placeholder="min. 8 znaków" {...field} /></FormControl>
+                <p className="text-xs text-muted-foreground">
+                  Wymyśl proste, ale bezpieczne hasło — przekażesz je osobiście.
+                </p>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose} disabled={mut.isPending}>
+                Anuluj
+              </Button>
+              <Button type="submit" disabled={mut.isPending}>
+                {mut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Utwórz konto i przypisz
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
