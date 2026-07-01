@@ -701,10 +701,254 @@ const STATUS_LABEL_CAL: Record<string, string> = {
   alert: "Alarm", requires_verification: "Do weryfikacji",
 };
 
+// ─── Typy eventów ─────────────────────────────────────────────────────────────
+
+type SeniorEvent = {
+  id: string;
+  senior_id: string;
+  date: string;
+  typ: "notatka" | "uwaga" | "alarm" | "wizyta_lekarska" | "inne";
+  tytul: string;
+  opis: string | null;
+  created_at: string;
+};
+
+const EVENT_TONE: Record<string, string> = {
+  notatka: "bg-sky-500/15 text-sky-700 border-sky-300",
+  uwaga: "bg-amber-500/15 text-amber-700 border-amber-300",
+  alarm: "bg-red-500/15 text-red-700 border-red-300",
+  wizyta_lekarska: "bg-purple-500/15 text-purple-700 border-purple-300",
+  inne: "bg-muted text-muted-foreground border-border",
+};
+const EVENT_ICON: Record<string, string> = {
+  notatka: "📝", uwaga: "⚠️", alarm: "🚨", wizyta_lekarska: "🏥", inne: "📌",
+};
+const EVENT_LABEL: Record<string, string> = {
+  notatka: "Notatka", uwaga: "Uwaga", alarm: "Alarm",
+  wizyta_lekarska: "Wizyta lekarska", inne: "Inne",
+};
+
+const eventSchema = z.object({
+  typ: z.enum(["notatka", "uwaga", "alarm", "wizyta_lekarska", "inne"]),
+  tytul: z.string().trim().min(1, "Wymagane").max(100),
+  opis: z.string().trim().max(500).optional().or(z.literal("")),
+});
+type EventForm = z.infer<typeof eventSchema>;
+
+function DayPanel({
+  date, seniorId, visits, cgMap, onClose,
+}: {
+  date: Date; seniorId: string;
+  visits: { id: string; planned_start: string; planned_end: string; status: string; hours_billed: number | null; caregiver_id: string | null }[];
+  cgMap: Record<string, string>; onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
+  const dateStr = date.toISOString().split("T")[0];
+
+  const { data: events, isLoading } = useQuery({
+    queryKey: ["senior-events", seniorId, dateStr],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("senior_events")
+        .select("id, senior_id, date, typ, tytul, opis, created_at")
+        .eq("senior_id", seniorId).eq("date", dateStr).order("created_at");
+      if (error) throw error;
+      return (data ?? []) as SeniorEvent[];
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("senior_events").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Usunięto");
+      qc.invalidateQueries({ queryKey: ["senior-events", seniorId, dateStr] });
+      qc.invalidateQueries({ queryKey: ["senior-events-month", seniorId] });
+    },
+  });
+
+  const dayLabel = date.toLocaleDateString("pl-PL", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-end">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="relative z-10 h-full w-full max-w-md overflow-y-auto bg-background shadow-2xl">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-card px-5 py-4">
+          <div>
+            <div className="font-semibold capitalize">{dayLabel}</div>
+            <div className="text-xs text-muted-foreground">{visits.length} wizyt · {(events ?? []).length} zdarzeń</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => setAddOpen(true)}>
+              <Plus className="h-4 w-4" /> Dodaj zdarzenie
+            </Button>
+            <button onClick={onClose} className="rounded-md p-1 hover:bg-muted">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4 p-5">
+          {visits.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Wizyty opiekuńcze</h3>
+              <div className="space-y-2">
+                {visits.map((v) => (
+                  <div key={v.id} className={`rounded-lg border px-3 py-2.5 ${STATUS_TONE_CAL[v.status] ?? "bg-muted"}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="font-medium text-sm">
+                        {new Date(v.planned_start).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })}
+                        {" – "}
+                        {new Date(v.planned_end).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                      {v.hours_billed != null && v.hours_billed > 0 && (
+                        <span className="text-xs font-semibold">{v.hours_billed} h</span>
+                      )}
+                    </div>
+                    {v.caregiver_id && cgMap[v.caregiver_id] && (
+                      <div className="text-xs mt-0.5 opacity-80">{cgMap[v.caregiver_id]}</div>
+                    )}
+                    <Badge variant="secondary" className="mt-1 text-xs">
+                      {STATUS_LABEL_CAL[v.status] ?? v.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Zdarzenia i notatki</h3>
+            {isLoading ? (
+              <Skeleton className="h-16 w-full" />
+            ) : (events ?? []).length === 0 ? (
+              <div className="rounded-lg border border-dashed bg-card p-4 text-center text-sm text-muted-foreground">
+                Brak zdarzeń. Kliknij "Dodaj zdarzenie" aby dodać notatkę lub alarm.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {(events ?? []).map((ev) => (
+                  <div key={ev.id} className={`rounded-lg border px-3 py-2.5 ${EVENT_TONE[ev.typ]}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 font-medium text-sm">
+                          <span>{EVENT_ICON[ev.typ]}</span><span>{ev.tytul}</span>
+                        </div>
+                        {ev.opis && <p className="mt-1 text-xs opacity-80 whitespace-pre-wrap">{ev.opis}</p>}
+                        <div className="mt-1 text-xs opacity-60">
+                          {new Date(ev.created_at).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => { if (confirm("Usunąć to zdarzenie?")) deleteMut.mutate(ev.id); }}
+                        className="flex-shrink-0 opacity-60 hover:opacity-100"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {addOpen && (
+          <AddEventDialog seniorId={seniorId} date={dateStr} open={addOpen} onClose={() => setAddOpen(false)} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AddEventDialog({ seniorId, date, open, onClose }: { seniorId: string; date: string; open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const form = useForm<EventForm>({
+    resolver: zodResolver(eventSchema),
+    defaultValues: { typ: "notatka", tytul: "", opis: "" },
+  });
+
+  const mut = useMutation({
+    mutationFn: async (v: EventForm) => {
+      const { data: user } = await supabase.auth.getUser();
+      const { error } = await supabase.from("senior_events").insert({
+        senior_id: seniorId, date, typ: v.typ,
+        tytul: v.tytul.trim(), opis: v.opis?.trim() || null,
+        created_by: user.user?.id,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Zdarzenie dodane");
+      qc.invalidateQueries({ queryKey: ["senior-events", seniorId, date] });
+      qc.invalidateQueries({ queryKey: ["senior-events-month", seniorId] });
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Dodaj zdarzenie — {new Date(date + "T12:00:00").toLocaleDateString("pl-PL", { day: "numeric", month: "long" })}</DialogTitle>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((v) => mut.mutate(v))} className="space-y-4">
+            <FormField control={form.control} name="typ" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Typ zdarzenia *</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    {Object.entries(EVENT_LABEL).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{EVENT_ICON[k]} {v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="tytul" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Tytuł *</FormLabel>
+                <FormControl><Input placeholder="np. Wizyta u kardiologa, Zmiana leku..." {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="opis" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Opis / szczegóły</FormLabel>
+                <FormControl>
+                  <Textarea rows={3} placeholder="Dodatkowe informacje..." {...field} value={field.value ?? ""} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose} disabled={mut.isPending}>Anuluj</Button>
+              <Button type="submit" disabled={mut.isPending}>
+                {mut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Zapisz
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: string }) {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
   const startOfMonth = new Date(viewYear, viewMonth, 1).toISOString();
   const endOfMonth = new Date(viewYear, viewMonth + 1, 0, 23, 59, 59).toISOString();
@@ -724,6 +968,20 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
     },
   });
 
+  const { data: monthEvents } = useQuery({
+    queryKey: ["senior-events-month", seniorId, viewYear, viewMonth],
+    queryFn: async () => {
+      const dateFrom = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-01`;
+      const dateTo = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(new Date(viewYear, viewMonth + 1, 0).getDate()).padStart(2, "0")}`;
+      const { data } = await supabase
+        .from("senior_events")
+        .select("id, date, typ")
+        .eq("senior_id", seniorId)
+        .gte("date", dateFrom).lte("date", dateTo);
+      return data ?? [];
+    },
+  });
+
   const { data: caregivers } = useQuery({
     queryKey: ["caregivers-names"],
     queryFn: async () => {
@@ -733,9 +991,8 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
   });
   const cgMap = Object.fromEntries((caregivers ?? []).map((c) => [c.id, `${c.imie} ${c.nazwisko}`]));
 
-  // Buduj siatkę kalendarza
-  const firstDay = new Date(viewYear, viewMonth, 1).getDay(); // 0=Sun
-  const firstMonday = firstDay === 0 ? 6 : firstDay - 1; // przesuń na pon
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const firstMonday = firstDay === 0 ? 6 : firstDay - 1;
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
 
   const visitsByDay: Record<number, typeof visits> = {};
@@ -745,92 +1002,79 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
     visitsByDay[d]!.push(v);
   });
 
-  const prevMonth = () => {
-    if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
-    else setViewMonth(m => m - 1);
-  };
-  const nextMonth = () => {
-    if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
-    else setViewMonth(m => m + 1);
-  };
+  const eventsByDay: Record<number, { typ: string }[]> = {};
+  (monthEvents ?? []).forEach((e) => {
+    const d = new Date(e.date + "T12:00:00").getDate();
+    if (!eventsByDay[d]) eventsByDay[d] = [];
+    eventsByDay[d].push({ typ: e.typ });
+  });
 
-  const MONTHS_PL = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec",
-    "Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
+  const prevMonth = () => { if (viewMonth === 0) { setViewYear(y => y-1); setViewMonth(11); } else setViewMonth(m => m-1); };
+  const nextMonth = () => { if (viewMonth === 11) { setViewYear(y => y+1); setViewMonth(0); } else setViewMonth(m => m+1); };
+
+  const MONTHS_PL = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
   const DAYS_PL = ["Pon","Wt","Śr","Czw","Pt","Sob","Nd"];
 
-  const totalHours = (visits ?? []).filter(v => v.status === "completed")
-    .reduce((s, v) => s + (v.hours_billed ?? 0), 0);
+  const totalHours = (visits ?? []).filter(v => v.status === "completed").reduce((s, v) => s + (v.hours_billed ?? 0), 0);
+  const selectedDayVisits = selectedDay ? (visitsByDay[selectedDay.getDate()] ?? []) : [];
 
   return (
     <div className="space-y-4">
-      {/* Nawigacja */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">{MONTHS_PL[viewMonth]} {viewYear}</h2>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">
-            Zrealizowane: <strong>{totalHours} h</strong>
-          </span>
-          <Button size="sm" variant="outline" onClick={prevMonth}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => { setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); }}>
-            Dziś
-          </Button>
-          <Button size="sm" variant="outline" onClick={nextMonth}>
-            <ChevronRightIcon className="h-4 w-4" />
-          </Button>
+          <span className="text-sm text-muted-foreground">Zrealizowane: <strong>{totalHours} h</strong></span>
+          <Button size="sm" variant="outline" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+          <Button size="sm" variant="outline" onClick={() => { setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); }}>Dziś</Button>
+          <Button size="sm" variant="outline" onClick={nextMonth}><ChevronRightIcon className="h-4 w-4" /></Button>
         </div>
       </div>
 
-      {/* Siatka kalendarza */}
       <div className="rounded-lg border bg-card overflow-hidden">
-        {/* Nagłówki dni */}
         <div className="grid grid-cols-7 border-b">
-          {DAYS_PL.map(d => (
-            <div key={d} className="py-2 text-center text-xs font-medium text-muted-foreground">
-              {d}
-            </div>
-          ))}
+          {DAYS_PL.map(d => <div key={d} className="py-2 text-center text-xs font-medium text-muted-foreground">{d}</div>)}
         </div>
-
-        {/* Komórki */}
         <div className="grid grid-cols-7">
-          {/* Puste komórki przed pierwszym dniem */}
           {Array.from({ length: firstMonday }).map((_, i) => (
             <div key={`empty-${i}`} className="min-h-[80px] border-b border-r bg-muted/20" />
           ))}
-
-          {/* Dni miesiąca */}
           {Array.from({ length: daysInMonth }).map((_, i) => {
             const day = i + 1;
             const dayVisits = visitsByDay[day] ?? [];
+            const dayEvents = eventsByDay[day] ?? [];
             const isToday = day === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
             const col = (firstMonday + i) % 7;
             const isWeekend = col >= 5;
+            const hasAlarm = dayEvents.some(e => e.typ === "alarm");
 
             return (
               <div
                 key={day}
-                className={`min-h-[80px] border-b border-r p-1.5 ${isWeekend ? "bg-muted/10" : ""}`}
+                className={`min-h-[80px] border-b border-r p-1.5 cursor-pointer transition-colors hover:bg-accent/50 ${isWeekend ? "bg-muted/10" : ""} ${hasAlarm ? "ring-1 ring-inset ring-red-400" : ""}`}
+                onClick={() => setSelectedDay(new Date(viewYear, viewMonth, day))}
               >
-                <div className={`mb-1 flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
-                  isToday ? "bg-primary text-primary-foreground" : "text-foreground"
-                }`}>
+                <div className={`mb-1 flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${isToday ? "bg-primary text-primary-foreground" : "text-foreground"}`}>
                   {day}
                 </div>
                 <div className="space-y-0.5">
-                  {isLoading ? (
-                    <Skeleton className="h-4 w-full" />
-                  ) : dayVisits.map((v) => (
-                    <div
-                      key={v.id}
-                      className={`rounded border px-1 py-0.5 text-xs truncate ${STATUS_TONE_CAL[v.status] ?? "bg-muted text-muted-foreground border-border"}`}
-                      title={`${new Date(v.planned_start).toLocaleTimeString("pl-PL", {hour:"2-digit",minute:"2-digit"})} – ${new Date(v.planned_end).toLocaleTimeString("pl-PL", {hour:"2-digit",minute:"2-digit"})}${v.caregiver_id && cgMap[v.caregiver_id] ? ` • ${cgMap[v.caregiver_id]}` : ""}`}
-                    >
-                      {new Date(v.planned_start).toLocaleTimeString("pl-PL", {hour:"2-digit",minute:"2-digit"})}
-                      {v.hours_billed ? ` (${v.hours_billed}h)` : ""}
-                    </div>
-                  ))}
+                  {isLoading ? <Skeleton className="h-4 w-full" /> : (
+                    <>
+                      {dayVisits.map((v) => (
+                        <div key={v.id} className={`rounded border px-1 py-0.5 text-xs truncate ${STATUS_TONE_CAL[v.status] ?? "bg-muted text-muted-foreground border-border"}`}>
+                          {new Date(v.planned_start).toLocaleTimeString("pl-PL", {hour:"2-digit",minute:"2-digit"})}
+                          {v.hours_billed ? ` (${v.hours_billed}h)` : ""}
+                        </div>
+                      ))}
+                      {dayEvents.length > 0 && (
+                        <div className="flex gap-0.5 flex-wrap mt-0.5">
+                          {dayEvents.slice(0, 4).map((e, idx) => (
+                            <div key={idx} className={`h-2 w-2 rounded-full border ${EVENT_TONE[e.typ]}`} title={EVENT_LABEL[e.typ]} />
+                          ))}
+                          {dayEvents.length > 4 && <span className="text-xs text-muted-foreground">+{dayEvents.length - 4}</span>}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             );
@@ -838,72 +1082,36 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
         </div>
       </div>
 
-      {/* Legenda */}
       <div className="flex flex-wrap gap-3 text-xs">
         {Object.entries(STATUS_LABEL_CAL).map(([k, v]) => (
           <div key={k} className="flex items-center gap-1.5">
-            <div className={`h-3 w-3 rounded border ${STATUS_TONE_CAL[k]}`} />
-            <span>{v}</span>
+            <div className={`h-3 w-3 rounded border ${STATUS_TONE_CAL[k]}`} /><span>{v}</span>
           </div>
         ))}
+        <div className="flex items-center gap-1.5 ml-2 border-l pl-2">
+          {Object.entries(EVENT_LABEL).map(([k]) => (
+            <div key={k} className="flex items-center gap-1" title={EVENT_LABEL[k]}>
+              <div className={`h-2 w-2 rounded-full border ${EVENT_TONE[k]}`} /><span>{EVENT_ICON[k]}</span>
+            </div>
+          ))}
+          <span className="text-muted-foreground">— zdarzenia</span>
+        </div>
       </div>
 
-      {/* Lista wizyt miesiąca */}
-      {(visits ?? []).length > 0 && (
-        <div className="rounded-lg border bg-card overflow-hidden">
-          <div className="border-b px-4 py-3">
-            <h3 className="text-sm font-semibold">Lista wizyt — {MONTHS_PL[viewMonth]} {viewYear}</h3>
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Data</TableHead>
-                <TableHead>Godziny</TableHead>
-                <TableHead>Opiekun</TableHead>
-                <TableHead>Godz. rozlicz.</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(visits ?? []).map((v) => (
-                <TableRow key={v.id}>
-                  <TableCell>{new Date(v.planned_start).toLocaleDateString("pl-PL")}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {new Date(v.planned_start).toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"})}
-                    {" – "}
-                    {new Date(v.planned_end).toLocaleTimeString("pl-PL",{hour:"2-digit",minute:"2-digit"})}
-                  </TableCell>
-                  <TableCell>{v.caregiver_id ? (cgMap[v.caregiver_id] ?? "—") : "—"}</TableCell>
-                  <TableCell>{v.hours_billed != null ? `${v.hours_billed} h` : "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className={STATUS_TONE_CAL[v.status] ?? ""}>
-                      {STATUS_LABEL_CAL[v.status] ?? v.status}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+      <p className="text-xs text-muted-foreground">Kliknij dowolny dzień aby zobaczyć szczegóły lub dodać zdarzenie/notatkę.</p>
+
+      {selectedDay && (
+        <DayPanel
+          date={selectedDay}
+          seniorId={seniorId}
+          visits={selectedDayVisits as any}
+          cgMap={cgMap}
+          onClose={() => setSelectedDay(null)}
+        />
       )}
     </div>
   );
 }
-
-// ─── ZAKŁADKA: RAPORTY WIZYT ──────────────────────────────────────────────────
-
-type VisitWithTasks = {
-  id: string;
-  planned_start: string;
-  planned_end: string;
-  actual_start: string | null;
-  actual_end: string | null;
-  status: string;
-  hours_billed: number | null;
-  notes: string | null;
-  caregiver_id: string | null;
-  tasks: { task_name: string; completed: boolean }[];
-};
 
 function RaportyWizytTab({ visits }: { visits: VisitWithTasks[] }) {
   const completed = visits.filter((v) => v.status === "completed");
