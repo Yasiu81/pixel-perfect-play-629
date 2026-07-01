@@ -24,22 +24,21 @@ function StrefaLogowanie() {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
 
-      // Sprawdź rolę
       const { data: roles } = await supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", data.user.id);
 
-      const role = (roles ?? []).map((r) => r.role);
+      const roleList = (roles ?? []).map((r) => r.role);
 
-      if (role.includes("family")) {
+      if (roleList.includes("family")) {
         navigate({ to: "/strefa/pulpit" });
-      } else if (role.includes("coordinator")) {
+      } else if (roleList.includes("coordinator")) {
         navigate({ to: "/pulpit" });
-      } else if (role.includes("caregiver")) {
+      } else if (roleList.includes("caregiver")) {
         navigate({ to: "/opiekun" });
       } else {
-        toast.error("Twoje konto nie ma dostępu do Strefy Klienta. Skontaktuj się z koordynatorem.");
+        toast.error("Brak dostępu do Strefy Klienta. Skontaktuj się z koordynatorem.");
         await supabase.auth.signOut();
       }
     } catch (e) {
@@ -52,7 +51,6 @@ function StrefaLogowanie() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0F6E56]/5 via-white to-[#0F6E56]/10 flex items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-8">
-        {/* Logo */}
         <div className="text-center space-y-2">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#0F6E56] text-white text-2xl font-bold shadow-lg">
             PS
@@ -61,55 +59,30 @@ function StrefaLogowanie() {
           <p className="text-sm text-gray-500">Strefa Klienta — panel dla rodziny</p>
         </div>
 
-        {/* Formularz */}
         <div className="rounded-2xl border bg-white p-8 shadow-sm">
           <form onSubmit={handleLogin} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Adres e-mail
-              </label>
-              <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="twoj@email.pl"
-                required
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Adres e-mail</label>
+              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="twoj@email.pl" required />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Hasło
-              </label>
-              <Input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Hasło</label>
+              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
             </div>
-            <Button
-              type="submit"
-              className="w-full bg-[#0F6E56] hover:bg-[#0a5a45]"
-              disabled={loading}
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            <Button type="submit" className="w-full bg-[#0F6E56] hover:bg-[#0a5a45]" disabled={loading}>
+              {loading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               Zaloguj się
             </Button>
           </form>
-
           <p className="mt-4 text-center text-xs text-gray-400">
             Dostęp tylko dla uprawnionych członków rodziny.<br />
             Dane logowania otrzymasz od koordynatora.
           </p>
         </div>
 
-        {/* Link do panelu koordynatora */}
         <p className="text-center text-xs text-gray-400">
           Jesteś opiekunem lub koordynatorem?{" "}
-          <a href="/auth" className="text-[#0F6E56] hover:underline">
-            Panel główny →
-          </a>
+          <a href="/auth" className="text-[#0F6E56] hover:underline">Panel główny →</a>
         </p>
       </div>
     </div>
