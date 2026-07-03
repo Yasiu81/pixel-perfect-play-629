@@ -1,0 +1,44 @@
+
+/* ─── Style druku dla raportów ─────────────────────────────────────────────── */
+@media print {
+  /* Ukryj wszystko oprócz treści raportu */
+  body > * { display: none !important; }
+  #root > * { display: none !important; }
+
+  /* Pokaż tylko panel koordynatora */
+  #root [data-print-area],
+  #root main { display: block !important; }
+
+  /* Ukryj sidebar, nagłówek, przyciski */
+  aside,
+  header,
+  nav,
+  [data-sidebar],
+  .print\\:hidden { display: none !important; }
+
+  /* Pokaż elementy oznaczone print:block */
+  .print\\:block { display: block !important; }
+
+  /* Strona A4 */
+  @page { size: A4; margin: 15mm 12mm; }
+
+  body { font-size: 11px; color: #000; background: #fff; }
+
+  /* Tabele */
+  table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+  th, td { border: 1px solid #ddd; padding: 4px 6px; text-align: left; }
+  th { background: #f5f5f5; font-weight: 600; }
+
+  /* Odznaki i kolory — uproszczone dla druku */
+  [class*="bg-emerald"] { background: #d1fae5 !important; }
+  [class*="bg-amber"]   { background: #fef3c7 !important; }
+  [class*="bg-red"]     { background: #fee2e2 !important; }
+  [class*="bg-sky"]     { background: #e0f2fe !important; }
+  [class*="bg-muted"]   { background: #f5f5f5 !important; }
+
+  /* Marginesy między sekcjami */
+  .space-y-4 > * + * { margin-top: 8px; }
+  .rounded-lg { border-radius: 0 !important; }
+}
