@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import {
   Plus, Loader2, X, Phone, MapPin, Award,
   Calendar, ChevronRight, AlertTriangle, CheckCircle2,
-  Users, Pencil,
+  Users, Pencil, Package, RotateCcw, ArrowDownToLine,
 } from "lucide-react";
 
 import { supabase } from "@/integrations/supabase/client";
@@ -311,6 +311,7 @@ function OpiekunowiePage() {
 
             {/* Szkolenia */}
             <TrainingsPanel caregiverId={selected.id} />
+            <EquipmentPanel caregiverId={selected.id} />
           </div>
         ) : (
           <div className="flex-1 flex items-center justify-center rounded-xl border border-dashed bg-card text-sm text-muted-foreground">
@@ -508,6 +509,336 @@ function AddTrainingDialog({
 }
 
 // ─── Dialog: edytuj profil ────────────────────────────────────────────────────
+
+// ─── Panel wyposażenia (wydania z magazynu) ───────────────────────────────────
+
+const KATEGORIA_LABEL: Record<string, string> = {
+  sprzet_medyczny: "Sprzęt medyczny",
+  srodki_higieniczne: "Środki higieniczne",
+  narzedzia: "Narzędzia",
+  dokumenty: "Dokumenty",
+  inne: "Inne",
+};
+
+const KATEGORIA_TONE: Record<string, string> = {
+  sprzet_medyczny: "bg-red-500/15 text-red-700",
+  srodki_higieniczne: "bg-sky-500/15 text-sky-700",
+  narzedzia: "bg-amber-500/15 text-amber-700",
+  dokumenty: "bg-violet-500/15 text-violet-700",
+  inne: "bg-muted text-muted-foreground",
+};
+
+type EquipmentLoan = {
+  id: string;
+  nazwa: string;
+  kategoria: string;
+  nr_seryjny: string | null;
+  ilosc: number;
+  data_wydania: string;
+  data_zwrotu: string | null;
+  notatka: string | null;
+};
+
+const equipmentSchema = z.object({
+  nazwa: z.string().trim().min(1, "Wymagane").max(100),
+  kategoria: z.enum(["sprzet_medyczny", "srodki_higieniczne", "narzedzia", "dokumenty", "inne"]),
+  nr_seryjny: z.string().trim().max(50).optional().or(z.literal("")),
+  ilosc: z.string().refine(v => !v || (Number(v) > 0 && Number(v) <= 999), "Liczba 1–999"),
+  data_wydania: z.string().min(1, "Wymagane"),
+  notatka: z.string().trim().max(300).optional().or(z.literal("")),
+});
+
+type EquipmentForm = z.infer<typeof equipmentSchema>;
+
+function EquipmentPanel({ caregiverId }: { caregiverId: string }) {
+  const qc = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
+
+  const { data: loans, isLoading } = useQuery({
+    queryKey: ["equipment", caregiverId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("equipment_loans")
+        .select("id, nazwa, kategoria, nr_seryjny, ilosc, data_wydania, data_zwrotu, notatka")
+        .eq("caregiver_id", caregiverId)
+        .order("data_wydania", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as EquipmentLoan[];
+    },
+  });
+
+  const returnMut = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("equipment_loans")
+        .update({ data_zwrotu: new Date().toISOString().split("T")[0] })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Oznaczono jako zwrócone");
+      qc.invalidateQueries({ queryKey: ["equipment", caregiverId] });
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("equipment_loans").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Usunięto wpis");
+      qc.invalidateQueries({ queryKey: ["equipment", caregiverId] });
+    },
+  });
+
+  const active = (loans ?? []).filter(l => !l.data_zwrotu);
+  const returned = (loans ?? []).filter(l => l.data_zwrotu);
+
+  return (
+    <div className="rounded-xl border bg-card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="flex items-center gap-2 text-sm font-semibold">
+          <Package className="h-4 w-4" />
+          Wydane wyposażenie / materiały
+        </h3>
+        <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
+          <ArrowDownToLine className="h-4 w-4" />
+          Wydaj
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-16 w-full" />
+      ) : (loans ?? []).length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Brak wydanego wyposażenia. Kliknij "Wydaj" aby dodać wpis.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {/* Aktualnie w posiadaniu */}
+          {active.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                W posiadaniu ({active.length})
+              </div>
+              <div className="space-y-2">
+                {active.map((l) => (
+                  <div key={l.id} className="flex items-start justify-between rounded-lg border bg-muted/20 px-3 py-2.5 gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium">{l.nazwa}</span>
+                        {l.ilosc > 1 && (
+                          <span className="text-xs bg-muted px-1.5 py-0.5 rounded">×{l.ilosc}</span>
+                        )}
+                        <Badge variant="secondary" className={`text-xs ${KATEGORIA_TONE[l.kategoria]}`}>
+                          {KATEGORIA_LABEL[l.kategoria]}
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5 flex gap-3 flex-wrap">
+                        <span>Wydano: {new Date(l.data_wydania).toLocaleDateString("pl-PL")}</span>
+                        {l.nr_seryjny && <span>Nr: {l.nr_seryjny}</span>}
+                      </div>
+                      {l.notatka && (
+                        <p className="text-xs text-muted-foreground mt-0.5 italic">{l.notatka}</p>
+                      )}
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-xs h-7 px-2"
+                        onClick={() => returnMut.mutate(l.id)}
+                        disabled={returnMut.isPending}
+                        title="Oznacz jako zwrócone"
+                      >
+                        <RotateCcw className="h-3 w-3 mr-1" />
+                        Zwrot
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => { if (confirm("Usunąć wpis?")) deleteMut.mutate(l.id); }}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Historia zwrotów */}
+          {returned.length > 0 && (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                Historia zwrotów ({returned.length})
+              </div>
+              <div className="space-y-1.5">
+                {returned.map((l) => (
+                  <div key={l.id} className="flex items-center justify-between rounded-lg border bg-muted/10 px-3 py-2 gap-2 opacity-70">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm line-through text-muted-foreground">{l.nazwa}</span>
+                        {l.ilosc > 1 && <span className="text-xs text-muted-foreground">×{l.ilosc}</span>}
+                      </div>
+                      <div className="text-xs text-muted-foreground flex gap-3">
+                        <span>Wydano: {new Date(l.data_wydania).toLocaleDateString("pl-PL")}</span>
+                        <span>Zwrócono: {new Date(l.data_zwrotu!).toLocaleDateString("pl-PL")}</span>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive flex-shrink-0"
+                      onClick={() => { if (confirm("Usunąć wpis?")) deleteMut.mutate(l.id); }}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {addOpen && (
+        <AddEquipmentDialog
+          caregiverId={caregiverId}
+          open={addOpen}
+          onClose={() => setAddOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddEquipmentDialog({
+  caregiverId, open, onClose,
+}: { caregiverId: string; open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const form = useForm<EquipmentForm>({
+    resolver: zodResolver(equipmentSchema),
+    defaultValues: {
+      nazwa: "",
+      kategoria: "inne",
+      nr_seryjny: "",
+      ilosc: "1",
+      data_wydania: new Date().toISOString().split("T")[0],
+      notatka: "",
+    },
+  });
+
+  const mut = useMutation({
+    mutationFn: async (v: EquipmentForm) => {
+      const { data: user } = await supabase.auth.getUser();
+      const { error } = await supabase.from("equipment_loans").insert({
+        caregiver_id: caregiverId,
+        nazwa: v.nazwa.trim(),
+        kategoria: v.kategoria,
+        nr_seryjny: v.nr_seryjny?.trim() || null,
+        ilosc: v.ilosc ? Number(v.ilosc) : 1,
+        data_wydania: v.data_wydania,
+        notatka: v.notatka?.trim() || null,
+        wydal_id: user.user?.id,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Wyposażenie wydane i zapisane");
+      qc.invalidateQueries({ queryKey: ["equipment", caregiverId] });
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Wydaj wyposażenie</DialogTitle>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit((v) => mut.mutate(v))} className="space-y-4">
+            <FormField control={form.control} name="nazwa" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Nazwa przedmiotu / środka *</FormLabel>
+                <FormControl>
+                  <Input placeholder="np. Ciśnieniomierz, Rękawice lateksowe, Karta opieki" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="kategoria" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Kategoria *</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {Object.entries(KATEGORIA_LABEL).map(([k, v]) => (
+                        <SelectItem key={k} value={k}>{v}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="ilosc" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Ilość</FormLabel>
+                  <FormControl><Input type="number" min="1" max="999" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="nr_seryjny" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Nr seryjny / ID</FormLabel>
+                  <FormControl>
+                    <Input placeholder="opcjonalnie" {...field} value={field.value ?? ""} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="data_wydania" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Data wydania *</FormLabel>
+                  <FormControl><Input type="date" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+
+            <FormField control={form.control} name="notatka" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Notatka</FormLabel>
+                <FormControl>
+                  <Textarea rows={2} placeholder="Stan techniczny, uwagi do wydania..." {...field} value={field.value ?? ""} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose} disabled={mut.isPending}>Anuluj</Button>
+              <Button type="submit" disabled={mut.isPending}>
+                {mut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Zapisz wydanie
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function EditProfileDialog({
   caregiver,

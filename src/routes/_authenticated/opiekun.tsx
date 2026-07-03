@@ -18,11 +18,19 @@ import {
   CheckSquare,
   Square,
   StickyNote,
+  Heart,
+  Thermometer,
+  Activity,
+  Wind,
+  Scale,
+  Droplets,
+  MessageSquare,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/opiekun")({
@@ -44,6 +52,7 @@ type Visit = {
   planned_end: string;
   status: VisitStatus;
   senior_id: string;
+  caregiver_id: string | null;
   actual_start: string | null;
   actual_end: string | null;
   hours_billed: number | null;
@@ -68,6 +77,18 @@ type Task = {
   id: string;
   task_name: string;
   completed: boolean;
+  uwagi: string | null;
+};
+
+type Vitals = {
+  cisnienie_skurczowe: string;
+  cisnienie_rozkurczowe: string;
+  puls: string;
+  temperatura: string;
+  saturacja: string;
+  waga: string;
+  poziom_cukru: string;
+  uwagi: string;
 };
 
 // ─── stałe ───────────────────────────────────────────────────────────────────
@@ -122,6 +143,54 @@ async function fetchServerTime(): Promise<string> {
 }
 
 // ─── główny komponent ─────────────────────────────────────────────────────────
+
+// ─── Raport dzienny po zakończeniu wizyty ────────────────────────────────────
+
+async function saveVisitReport(
+  visitId: string,
+  seniorId: string,
+  caregiverId: string | null,
+  tasks: Task[],
+) {
+  try {
+    // Pobierz aktualne dane wizyty (godziny, notatki)
+    const { data: visit } = await supabase
+      .from("visits")
+      .select("planned_start, hours_billed, notes")
+      .eq("id", visitId)
+      .single();
+
+    // Pobierz parametry życiowe z tej wizyty
+    const { data: vitals } = await supabase
+      .from("senior_vitals")
+      .select("*")
+      .eq("visit_id", visitId)
+      .order("measured_at", { ascending: false })
+      .limit(1);
+
+    // Przygotuj snapshot czynności
+    const tasksSummary = tasks.map(t => ({
+      task_name: t.task_name,
+      completed: t.completed,
+      uwagi: t.uwagi,
+    }));
+
+    // Zapisz raport
+    await supabase.from("visit_reports").insert({
+      visit_id: visitId,
+      senior_id: seniorId,
+      caregiver_id: caregiverId,
+      report_date: (visit?.planned_start ?? new Date().toISOString()).split("T")[0],
+      tasks_summary: tasksSummary,
+      vitals_summary: vitals?.[0] ?? null,
+      notes: visit?.notes ?? null,
+      hours_billed: visit?.hours_billed ?? null,
+    });
+  } catch (e) {
+    // Raport jest opcjonalny — nie blokuj zakończenia wizyty jeśli się nie uda
+    console.error("Błąd zapisu raportu:", e);
+  }
+}
 
 function OpiekunApp() {
   const navigate = useNavigate();
@@ -283,7 +352,7 @@ function DayScreen({ onOpenVisit }: { onOpenVisit: (id: string) => void }) {
         .select(
           `id, planned_start, planned_end, status, actual_start, actual_end,
            hours_billed, nfc_verified_entry, nfc_verified_exit,
-           gps_verified_entry, gps_verified_exit, notes, senior_id,
+           gps_verified_entry, gps_verified_exit, notes, senior_id, caregiver_id,
            senior:seniors(imie, nazwisko, adres, telefon, lat, lng, nfc_uid, plan_wsparcia)`,
         )
         .eq("caregiver_id", user!.id)
@@ -398,7 +467,7 @@ function VisitScreen({
         .select(
           `id, planned_start, planned_end, status, actual_start, actual_end,
            hours_billed, nfc_verified_entry, nfc_verified_exit,
-           gps_verified_entry, gps_verified_exit, notes, senior_id,
+           gps_verified_entry, gps_verified_exit, notes, senior_id, caregiver_id,
            senior:seniors(imie, nazwisko, adres, telefon, lat, lng, nfc_uid, plan_wsparcia)`,
         )
         .eq("id", visitId)
@@ -513,6 +582,11 @@ function VisitScreen({
         />
       )}
 
+      {/* Parametry życiowe */}
+      {isActive && visit.senior && (
+        <VitalsStep visitId={visitId} seniorId={visit.senior_id} />
+      )}
+
       {/* Notatka */}
       {isActive && (
         <NotesStep visitId={visitId} initialNotes={visit.notes ?? ""} />
@@ -524,7 +598,11 @@ function VisitScreen({
           label="Zakończ wizytę"
           icon="exit"
           visit={visit}
-          onSuccess={invalidate}
+          onSuccess={async () => {
+            // Zapisz raport dzienny po zakończeniu
+            await saveVisitReport(visitId, visit.senior_id, visit.caregiver_id ?? null, tasks ?? []);
+            invalidate();
+          }}
         />
       )}
 
@@ -889,6 +967,9 @@ function TasksStep({
   tasks: Task[];
   onRefresh: () => void;
 }) {
+  const [expandedUwagi, setExpandedUwagi] = useState<string | null>(null);
+  const [uwagi, setUwagi] = useState<Record<string, string>>({});
+
   const toggleTask = async (task: Task) => {
     await supabase
       .from("visit_tasks")
@@ -900,10 +981,21 @@ function TasksStep({
     onRefresh();
   };
 
+  const saveUwagi = async (taskId: string) => {
+    const val = uwagi[taskId] ?? "";
+    await supabase.from("visit_tasks").update({ uwagi: val || null } as never).eq("id", taskId);
+    onRefresh();
+    setExpandedUwagi(null);
+    toast.success("Uwaga zapisana");
+  };
+
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
       <div className="px-4 py-3 border-b bg-muted/30">
         <h3 className="text-sm font-semibold">Krok 2 — Wykonane czynności</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Zaznacz wykonane · Kliknij <MessageSquare className="inline h-3 w-3" /> aby dodać uwagę jeśli niewykonane
+        </p>
       </div>
       <div className="divide-y">
         {tasks.length === 0 && (
@@ -912,32 +1004,180 @@ function TasksStep({
           </p>
         )}
         {tasks.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => toggleTask(t)}
-            className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30"
-          >
-            {t.completed ? (
-              <CheckSquare className="h-5 w-5 flex-shrink-0 text-success" />
-            ) : (
-              <Square className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
-            )}
-            <span
-              className={cn(
-                "text-sm",
-                t.completed && "line-through text-muted-foreground",
+          <div key={t.id} className="divide-y">
+            <div className="flex items-center gap-2 px-4 py-3">
+              <button
+                onClick={() => toggleTask(t)}
+                className="flex items-center gap-3 flex-1 text-left hover:opacity-80"
+              >
+                {t.completed ? (
+                  <CheckSquare className="h-5 w-5 flex-shrink-0 text-emerald-500" />
+                ) : (
+                  <Square className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+                )}
+                <span className={cn("text-sm", t.completed && "line-through text-muted-foreground")}>
+                  {t.task_name}
+                </span>
+              </button>
+              {!t.completed && (
+                <button
+                  onClick={() => {
+                    setExpandedUwagi(expandedUwagi === t.id ? null : t.id);
+                    if (!uwagi[t.id] && t.uwagi) setUwagi(u => ({ ...u, [t.id]: t.uwagi ?? "" }));
+                  }}
+                  className={cn(
+                    "flex-shrink-0 p-1 rounded hover:bg-muted",
+                    (t.uwagi || expandedUwagi === t.id) ? "text-amber-500" : "text-muted-foreground"
+                  )}
+                  title="Dodaj uwagę"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                </button>
               )}
-            >
-              {t.task_name}
-            </span>
-          </button>
+            </div>
+            {/* Pole uwag */}
+            {expandedUwagi === t.id && (
+              <div className="px-4 py-2 bg-amber-500/5 border-amber-300/30 space-y-2">
+                <p className="text-xs text-amber-700 font-medium">Powód niewykonania / uwaga:</p>
+                <Textarea
+                  rows={2}
+                  value={uwagi[t.id] ?? t.uwagi ?? ""}
+                  onChange={(e) => setUwagi(u => ({ ...u, [t.id]: e.target.value }))}
+                  placeholder="np. Podopieczny odmówił, brak czasu, inne..."
+                  className="text-sm"
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => saveUwagi(t.id)}>Zapisz uwagę</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setExpandedUwagi(null)}>Anuluj</Button>
+                </div>
+              </div>
+            )}
+            {/* Pokaż zapisaną uwagę */}
+            {t.uwagi && expandedUwagi !== t.id && !t.completed && (
+              <div className="px-4 py-1.5 bg-amber-500/5 text-xs text-amber-700">
+                ⚠️ {t.uwagi}
+              </div>
+            )}
+          </div>
         ))}
       </div>
     </div>
   );
 }
 
-// ─── Notatka ─────────────────────────────────────────────────────────────────
+// ─── Parametry życiowe ────────────────────────────────────────────────────────
+
+function VitalsStep({
+  visitId,
+  seniorId,
+}: {
+  visitId: string;
+  seniorId: string;
+}) {
+  const [vitals, setVitals] = useState<Vitals>({
+    cisnienie_skurczowe: "", cisnienie_rozkurczowe: "", puls: "",
+    temperatura: "", saturacja: "", waga: "", poziom_cukru: "", uwagi: "",
+  });
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const set = (field: keyof Vitals) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setVitals(v => ({ ...v, [field]: e.target.value }));
+
+  const handleSave = async () => {
+    const hasAny = Object.values(vitals).some(v => v.trim() !== "");
+    if (!hasAny) { toast.error("Wypełnij przynajmniej jeden parametr"); return; }
+    setSaving(true);
+    try {
+      const { data: user } = await supabase.auth.getUser();
+      const { error } = await supabase.from("senior_vitals").insert({
+        visit_id: visitId,
+        senior_id: seniorId,
+        created_by: user.user?.id,
+        cisnienie_skurczowe: vitals.cisnienie_skurczowe ? Number(vitals.cisnienie_skurczowe) : null,
+        cisnienie_rozkurczowe: vitals.cisnienie_rozkurczowe ? Number(vitals.cisnienie_rozkurczowe) : null,
+        puls: vitals.puls ? Number(vitals.puls) : null,
+        temperatura: vitals.temperatura ? Number(vitals.temperatura) : null,
+        saturacja: vitals.saturacja ? Number(vitals.saturacja) : null,
+        waga: vitals.waga ? Number(vitals.waga) : null,
+        poziom_cukru: vitals.poziom_cukru ? Number(vitals.poziom_cukru) : null,
+        uwagi: vitals.uwagi || null,
+      });
+      if (error) throw error;
+      setSaved(true);
+      toast.success("Parametry zapisane");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const fields: { key: keyof Vitals; label: string; unit: string; icon: React.ReactNode; placeholder: string }[] = [
+    { key: "cisnienie_skurczowe", label: "Ciśnienie skurczowe", unit: "mmHg", icon: <Heart className="h-4 w-4 text-red-500" />, placeholder: "120" },
+    { key: "cisnienie_rozkurczowe", label: "Ciśnienie rozkurczowe", unit: "mmHg", icon: <Heart className="h-4 w-4 text-red-400" />, placeholder: "80" },
+    { key: "puls", label: "Tętno", unit: "ud/min", icon: <Activity className="h-4 w-4 text-pink-500" />, placeholder: "72" },
+    { key: "temperatura", label: "Temperatura", unit: "°C", icon: <Thermometer className="h-4 w-4 text-orange-500" />, placeholder: "36.6" },
+    { key: "saturacja", label: "Saturacja (SpO₂)", unit: "%", icon: <Wind className="h-4 w-4 text-blue-500" />, placeholder: "98" },
+    { key: "waga", label: "Waga", unit: "kg", icon: <Scale className="h-4 w-4 text-violet-500" />, placeholder: "65.0" },
+    { key: "poziom_cukru", label: "Poziom cukru", unit: "mg/dL", icon: <Droplets className="h-4 w-4 text-amber-500" />, placeholder: "100" },
+  ];
+
+  return (
+    <div className="rounded-xl border bg-card overflow-hidden">
+      <div className="px-4 py-3 border-b bg-muted/30 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Heart className="h-4 w-4 text-red-500" />
+            Krok 3 — Parametry życiowe
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Wypełnij mierzone parametry (opcjonalne)</p>
+        </div>
+        {saved && <span className="text-xs text-emerald-600 font-medium">✓ Zapisano</span>}
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          {fields.map(f => (
+            <div key={f.key}>
+              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-1">
+                {f.icon} {f.label}
+              </label>
+              <div className="flex items-center gap-1">
+                <Input
+                  type="number"
+                  step="0.1"
+                  placeholder={f.placeholder}
+                  value={vitals[f.key]}
+                  onChange={set(f.key)}
+                  className="h-8 text-sm"
+                  disabled={saved}
+                />
+                <span className="text-xs text-muted-foreground whitespace-nowrap">{f.unit}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground mb-1 block">Dodatkowe obserwacje</label>
+          <Textarea
+            placeholder="np. Senior skarżył się na ból głowy, widoczne obrzęki nóg..."
+            value={vitals.uwagi}
+            onChange={set("uwagi")}
+            rows={2}
+            className="text-sm resize-none"
+            disabled={saved}
+          />
+        </div>
+        {!saved && (
+          <Button size="sm" onClick={handleSave} disabled={saving} className="w-full">
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            Zapisz parametry
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function NotesStep({
   visitId,
