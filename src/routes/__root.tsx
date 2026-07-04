@@ -130,8 +130,23 @@ function RootComponent() {
   const router = useRouter();
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
+    let prevSession: boolean | null = null;
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      const hasSession = !!session;
+
+      // Ignoruj SIGNED_OUT jeśli i tak nie było sesji (unika fałszywego invalidate przy starcie)
+      if (event === "SIGNED_OUT" && prevSession === false) {
+        prevSession = false;
+        return;
+      }
+
+      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") {
+        prevSession = hasSession;
+        return;
+      }
+
+      prevSession = hasSession;
       router.invalidate();
       if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
     });

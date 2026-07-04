@@ -22,6 +22,7 @@ import { Route as AuthenticatedCoordinatorSeniorzyRouteImport } from './routes/_
 import { Route as AuthenticatedCoordinatorRaportyRouteImport } from './routes/_authenticated/_coordinator/raporty'
 import { Route as AuthenticatedCoordinatorPulpitRouteImport } from './routes/_authenticated/_coordinator/pulpit'
 import { Route as AuthenticatedCoordinatorOpiekunowieRouteImport } from './routes/_authenticated/_coordinator/opiekunowie'
+import { Route as AuthenticatedCoordinatorKalendarzRouteImport } from './routes/_authenticated/_coordinator/kalendarz'
 import { Route as AuthenticatedCoordinatorSeniorzyIdRouteImport } from './routes/_authenticated/_coordinator/seniorzy_.$id'
 
 const AuthRoute = AuthRouteImport.update({
@@ -93,6 +94,12 @@ const AuthenticatedCoordinatorOpiekunowieRoute =
     path: '/opiekunowie',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorKalendarzRoute =
+  AuthenticatedCoordinatorKalendarzRouteImport.update({
+    id: '/kalendarz',
+    path: '/kalendarz',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedCoordinatorSeniorzyIdRoute =
   AuthenticatedCoordinatorSeniorzyIdRouteImport.update({
     id: '/seniorzy_/$id',
@@ -107,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/opiekun': typeof AuthenticatedOpiekunRoute
   '/strefa/logowanie': typeof StrefaLogowanieRoute
   '/strefa/pulpit': typeof StrefaPulpitRoute
+  '/kalendarz': typeof AuthenticatedCoordinatorKalendarzRoute
   '/opiekunowie': typeof AuthenticatedCoordinatorOpiekunowieRoute
   '/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/raporty': typeof AuthenticatedCoordinatorRaportyRoute
@@ -121,6 +129,7 @@ export interface FileRoutesByTo {
   '/opiekun': typeof AuthenticatedOpiekunRoute
   '/strefa/logowanie': typeof StrefaLogowanieRoute
   '/strefa/pulpit': typeof StrefaPulpitRoute
+  '/kalendarz': typeof AuthenticatedCoordinatorKalendarzRoute
   '/opiekunowie': typeof AuthenticatedCoordinatorOpiekunowieRoute
   '/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/raporty': typeof AuthenticatedCoordinatorRaportyRoute
@@ -138,6 +147,7 @@ export interface FileRoutesById {
   '/_authenticated/opiekun': typeof AuthenticatedOpiekunRoute
   '/strefa/logowanie': typeof StrefaLogowanieRoute
   '/strefa/pulpit': typeof StrefaPulpitRoute
+  '/_authenticated/_coordinator/kalendarz': typeof AuthenticatedCoordinatorKalendarzRoute
   '/_authenticated/_coordinator/opiekunowie': typeof AuthenticatedCoordinatorOpiekunowieRoute
   '/_authenticated/_coordinator/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/_authenticated/_coordinator/raporty': typeof AuthenticatedCoordinatorRaportyRoute
@@ -154,6 +164,7 @@ export interface FileRouteTypes {
     | '/opiekun'
     | '/strefa/logowanie'
     | '/strefa/pulpit'
+    | '/kalendarz'
     | '/opiekunowie'
     | '/pulpit'
     | '/raporty'
@@ -168,6 +179,7 @@ export interface FileRouteTypes {
     | '/opiekun'
     | '/strefa/logowanie'
     | '/strefa/pulpit'
+    | '/kalendarz'
     | '/opiekunowie'
     | '/pulpit'
     | '/raporty'
@@ -184,6 +196,7 @@ export interface FileRouteTypes {
     | '/_authenticated/opiekun'
     | '/strefa/logowanie'
     | '/strefa/pulpit'
+    | '/_authenticated/_coordinator/kalendarz'
     | '/_authenticated/_coordinator/opiekunowie'
     | '/_authenticated/_coordinator/pulpit'
     | '/_authenticated/_coordinator/raporty'
@@ -293,6 +306,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorOpiekunowieRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/_coordinator/kalendarz': {
+      id: '/_authenticated/_coordinator/kalendarz'
+      path: '/kalendarz'
+      fullPath: '/kalendarz'
+      preLoaderRoute: typeof AuthenticatedCoordinatorKalendarzRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/_coordinator/seniorzy_/$id': {
       id: '/_authenticated/_coordinator/seniorzy_/$id'
       path: '/seniorzy/$id'
@@ -304,6 +324,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedCoordinatorRouteChildren {
+  AuthenticatedCoordinatorKalendarzRoute: typeof AuthenticatedCoordinatorKalendarzRoute
   AuthenticatedCoordinatorOpiekunowieRoute: typeof AuthenticatedCoordinatorOpiekunowieRoute
   AuthenticatedCoordinatorPulpitRoute: typeof AuthenticatedCoordinatorPulpitRoute
   AuthenticatedCoordinatorRaportyRoute: typeof AuthenticatedCoordinatorRaportyRoute
@@ -314,6 +335,8 @@ interface AuthenticatedCoordinatorRouteChildren {
 
 const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildren =
   {
+    AuthenticatedCoordinatorKalendarzRoute:
+      AuthenticatedCoordinatorKalendarzRoute,
     AuthenticatedCoordinatorOpiekunowieRoute:
       AuthenticatedCoordinatorOpiekunowieRoute,
     AuthenticatedCoordinatorPulpitRoute: AuthenticatedCoordinatorPulpitRoute,

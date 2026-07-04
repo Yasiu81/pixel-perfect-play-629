@@ -1,5 +1,5 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, CalendarClock, FileBarChart, LogOut, UserCog } from "lucide-react";
+import { LayoutDashboard, Users, CalendarClock, FileBarChart, LogOut, UserCog, CalendarDays } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -18,6 +18,7 @@ const items = [
   { title: "Pulpit", url: "/pulpit", icon: LayoutDashboard },
   { title: "Seniorzy", url: "/seniorzy", icon: Users },
   { title: "Opiekunowie", url: "/opiekunowie", icon: UserCog },
+  { title: "Kalendarz", url: "/kalendarz", icon: CalendarDays },
   { title: "Monitor wizyt", url: "/wizyty", icon: CalendarClock },
   { title: "Raporty", url: "/raporty", icon: FileBarChart },
 ];
