@@ -330,6 +330,13 @@ function DayScreen({ onOpenVisit }: { onOpenVisit: (id: string) => void }) {
     },
   });
 
+  // Sprawdź spóźnione wizyty przy każdym wejściu na ekran
+  useEffect(() => {
+    supabase.rpc("check_late_visits").catch(() => {
+      // Ignoruj błąd jeśli funkcja niedostępna (plan Supabase)
+    });
+  }, []);
+
   const today = new Date();
   const startOfDay = new Date(
     today.getFullYear(),
@@ -773,6 +780,26 @@ function NfcGpsStep({
           .update(updateData)
           .eq("id", visit.id);
         if (error) throw error;
+
+        // Po wyjściu: sprawdź uwagi do niewykonanych zadań → Alarm
+        if (!isEntry) {
+          const { data: tasks } = await supabase
+            .from("visit_tasks")
+            .select("id, task_name, completed, uwagi")
+            .eq("visit_id", visit.id);
+
+          const tasksWithUwagi = (tasks ?? []).filter((t: any) => !t.completed && t.uwagi);
+
+          if (tasksWithUwagi.length > 0) {
+            await supabase.from("visits").update({ status: "alert" }).eq("id", visit.id);
+            await supabase.from("alerts").insert({
+              visit_id: visit.id,
+              senior_id: visit.senior_id,
+              type: "task_incomplete",
+              description: `${tasksWithUwagi.length} czynności niewykonanych z uwagami: ${tasksWithUwagi.map((t: any) => t.task_name).join(", ")}`,
+            });
+          }
+        }
       }
 
       setStep("done");
