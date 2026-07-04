@@ -332,9 +332,13 @@ function DayScreen({ onOpenVisit }: { onOpenVisit: (id: string) => void }) {
 
   // Sprawdź spóźnione wizyty przy każdym wejściu na ekran
   useEffect(() => {
-    supabase.rpc("check_late_visits").catch(() => {
-      // Ignoruj błąd jeśli funkcja niedostępna (plan Supabase)
-    });
+    (async () => {
+      try {
+        await supabase.rpc("check_late_visits");
+      } catch {
+        // Ignoruj błąd jeśli funkcja niedostępna
+      }
+    })();
   }, []);
 
   const today = new Date();
