@@ -676,37 +676,65 @@ function WizytyPage() {
                         <FormDescription>
                           Wybierz najpierw seniora, by zobaczyć jego plan wsparcia.
                         </FormDescription>
-                      ) : planTasks.length === 0 ? (
-                        <FormDescription>
-                          Senior nie ma jeszcze zdefiniowanego planu wsparcia.
-                        </FormDescription>
                       ) : (
-                        <div className="space-y-2 rounded-md border p-3">
-                          {planTasks.map((task) => {
-                            const checked = field.value.includes(task);
-                            return (
-                              <label
-                                key={task}
-                                className="flex cursor-pointer items-center gap-2 text-sm"
-                              >
-                                <Checkbox
-                                  checked={checked}
-                                  onCheckedChange={(c) => {
-                                    if (c) field.onChange([...field.value, task]);
-                                    else
-                                      field.onChange(
-                                        field.value.filter((t) => t !== task),
-                                      );
-                                  }}
-                                />
-                                <span>{task}</span>
-                              </label>
-                            );
-                          })}
+                        <div className="space-y-3">
+                          {/* Czynności z planu wsparcia */}
+                          {planTasks.length > 0 && (
+                            <div className="space-y-2 rounded-md border p-3">
+                              <p className="text-xs font-medium text-muted-foreground">Z planu wsparcia:</p>
+                              {planTasks.map((task) => {
+                                const checked = field.value.includes(task);
+                                return (
+                                  <label
+                                    key={task}
+                                    className="flex cursor-pointer items-center gap-2 text-sm"
+                                  >
+                                    <Checkbox
+                                      checked={checked}
+                                      onCheckedChange={(c) => {
+                                        if (c) field.onChange([...field.value, task]);
+                                        else field.onChange(field.value.filter((t) => t !== task));
+                                      }}
+                                    />
+                                    <span>{task}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Jednorazowe czynności dodatkowe */}
+                          <div className="rounded-md border p-3 space-y-2">
+                            <p className="text-xs font-medium text-muted-foreground">Dodatkowe czynności dla tej wizyty:</p>
+                            {field.value
+                              .filter((t) => !planTasks.includes(t))
+                              .map((task, idx) => (
+                                <div key={idx} className="flex items-center gap-2 text-sm">
+                                  <CheckSquare className="h-4 w-4 text-primary flex-shrink-0" />
+                                  <span className="flex-1">{task}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => field.onChange(field.value.filter((t) => t !== task))}
+                                    className="text-muted-foreground hover:text-destructive"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              ))}
+                            <AddCustomTaskInput
+                              onAdd={(task) => field.onChange([...field.value, task])}
+                            />
+                          </div>
+
+                          {planTasks.length === 0 && field.value.length === 0 && (
+                            <FormDescription>
+                              Senior nie ma planu wsparcia — dodaj czynności ręcznie powyżej.
+                            </FormDescription>
+                          )}
                         </div>
                       )}
                       <FormDescription>
-                        Pre-fill listy zadań, którą opiekun zobaczy podczas wizyty.
+                        Opiekun zobaczy tę listę po zalogowaniu do wizyty.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -851,6 +879,41 @@ function WizytyPage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Pole dodawania jednorazowej czynności ────────────────────────────────────
+
+function AddCustomTaskInput({ onAdd }: { onAdd: (task: string) => void }) {
+  const [value, setValue] = useState("");
+
+  const handleAdd = () => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    onAdd(trimmed);
+    setValue("");
+  };
+
+  return (
+    <div className="flex gap-2 mt-1">
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Wpisz dodatkową czynność..."
+        className="h-8 text-sm flex-1"
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { e.preventDefault(); handleAdd(); }
+        }}
+      />
+      <button
+        type="button"
+        onClick={handleAdd}
+        disabled={!value.trim()}
+        className="flex items-center gap-1 rounded-md border bg-muted px-3 py-1 text-xs font-medium hover:bg-muted/80 disabled:opacity-50"
+      >
+        <Plus className="h-3.5 w-3.5" /> Dodaj
+      </button>
     </div>
   );
 }

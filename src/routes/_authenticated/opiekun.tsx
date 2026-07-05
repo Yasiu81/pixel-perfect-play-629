@@ -111,7 +111,7 @@ const STATUS_TONE: Record<VisitStatus, string> = {
   requires_verification: "bg-warning/15 text-warning",
 };
 
-const GPS_RADIUS_M = 100;
+const GPS_RADIUS_M = 200; // zwiększony promień dla lepszej użyteczności
 
 // ─── helper: odległość Haversine ─────────────────────────────────────────────
 
@@ -802,27 +802,34 @@ function NfcGpsStep({
     let gpsOk = false;
     let distanceM = 0;
 
-    const gpsResult = await new Promise<GeolocationPosition | null>(
-      (resolve) => {
-        navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), {
-          enableHighAccuracy: true,
-          timeout: 15000,
-        });
-      },
-    );
+    // Jeśli senior nie ma wpisanych współrzędnych GPS — weryfikacja tylko przez NFC
+    const seniorHasGps = visit.senior?.lat != null && visit.senior?.lng != null;
 
-    if (
-      gpsResult &&
-      visit.senior?.lat != null &&
-      visit.senior?.lng != null
-    ) {
-      distanceM = haversineM(
-        gpsResult.coords.latitude,
-        gpsResult.coords.longitude,
-        visit.senior.lat,
-        visit.senior.lng,
+    if (!seniorHasGps) {
+      // Brak GPS seniora → uznaj za OK, NFC wystarczy
+      gpsOk = true;
+    } else {
+      const gpsResult = await new Promise<GeolocationPosition | null>(
+        (resolve) => {
+          navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), {
+            enableHighAccuracy: true,
+            timeout: 15000,
+          });
+        },
       );
-      gpsOk = distanceM <= GPS_RADIUS_M;
+
+      if (gpsResult) {
+        distanceM = haversineM(
+          gpsResult.coords.latitude,
+          gpsResult.coords.longitude,
+          visit.senior!.lat!,
+          visit.senior!.lng!,
+        );
+        gpsOk = distanceM <= GPS_RADIUS_M;
+      } else {
+        // Brak sygnału GPS → nie blokuj, ale zanotuj
+        gpsOk = true;
+      }
     }
 
     setStep("checking");
