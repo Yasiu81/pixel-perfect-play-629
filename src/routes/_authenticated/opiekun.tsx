@@ -25,6 +25,7 @@ import {
   Scale,
   Droplets,
   MessageSquare,
+  Bell,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 export const Route = createFileRoute("/_authenticated/opiekun")({
   component: OpiekunApp,
@@ -195,6 +197,46 @@ async function saveVisitReport(
 function OpiekunApp() {
   const navigate = useNavigate();
   const [activeVisitId, setActiveVisitId] = useState<string | null>(null);
+  const [showNotifs, setShowNotifs] = useState(false);
+
+  const { data: user } = useQuery({
+    queryKey: ["me"],
+    queryFn: async () => {
+      const { data } = await supabase.auth.getUser();
+      return data.user;
+    },
+  });
+
+  // Aktywuj powiadomienia push
+  usePushNotifications(user?.id);
+
+  // Nieprzeczytane powiadomienia
+  const { data: notifs, refetch: refetchNotifs } = useQuery({
+    queryKey: ["my-notifications", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("notifications")
+        .select("id, tytul, tresc, url, przeczytane, created_at")
+        .eq("user_id", user!.id)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      return data ?? [];
+    },
+    refetchInterval: 30_000,
+  });
+
+  const unread = (notifs ?? []).filter((n: any) => !n.przeczytane).length;
+
+  const markAllRead = async () => {
+    if (!user) return;
+    await supabase
+      .from("notifications")
+      .update({ przeczytane: true })
+      .eq("user_id", user.id)
+      .eq("przeczytane", false);
+    refetchNotifs();
+  };
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -215,6 +257,64 @@ function OpiekunApp() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Dzwonek powiadomień */}
+          <div className="relative">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setShowNotifs(v => !v); if (!showNotifs) markAllRead(); }}
+              className="relative"
+            >
+              <Bell className="h-4 w-4" />
+              {unread > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                  {unread > 9 ? "9+" : unread}
+                </span>
+              )}
+            </Button>
+
+            {/* Panel powiadomień */}
+            {showNotifs && (
+              <div className="absolute right-0 top-10 z-50 w-80 rounded-xl border bg-card shadow-xl overflow-hidden">
+                <div className="flex items-center justify-between border-b px-4 py-2.5">
+                  <span className="text-sm font-semibold">Powiadomienia</span>
+                  <button onClick={() => setShowNotifs(false)} className="text-muted-foreground hover:text-foreground">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="max-h-80 overflow-y-auto divide-y">
+                  {(notifs ?? []).length === 0 ? (
+                    <p className="px-4 py-6 text-sm text-center text-muted-foreground">
+                      Brak powiadomień
+                    </p>
+                  ) : (notifs ?? []).map((n: any) => (
+                    <div
+                      key={n.id}
+                      className={`px-4 py-3 ${!n.przeczytane ? "bg-primary/5" : ""}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">{n.tytul}</div>
+                          {n.tresc && (
+                            <div className="text-xs text-muted-foreground mt-0.5">{n.tresc}</div>
+                          )}
+                          <div className="text-xs text-muted-foreground/60 mt-1">
+                            {new Date(n.created_at).toLocaleString("pl-PL", {
+                              day: "numeric", month: "short", hour: "2-digit", minute: "2-digit"
+                            })}
+                          </div>
+                        </div>
+                        {!n.przeczytane && (
+                          <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-1" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           <SosButton />
           <Button variant="ghost" size="sm" onClick={handleLogout}>
             <LogOut className="h-4 w-4" />
