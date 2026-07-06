@@ -42,3 +42,34 @@
   .space-y-4 > * + * { margin-top: 8px; }
   .rounded-lg { border-radius: 0 !important; }
 }
+
+/* ─── Powiększona czcionka dla aplikacji opiekuna ────────────────────────────
+   Opiekunki 60+ — zwiększamy bazową wielkość tekstu o ~25%
+   Klasa .opiekun-app jest dodana do root div w opiekun.tsx             */
+
+.opiekun-app {
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.opiekun-app .text-xs  { font-size: 13px !important; }
+.opiekun-app .text-sm  { font-size: 16px !important; }
+.opiekun-app .text-base { font-size: 18px !important; }
+.opiekun-app .text-lg  { font-size: 20px !important; }
+.opiekun-app .text-xl  { font-size: 22px !important; }
+.opiekun-app .text-2xl { font-size: 26px !important; }
+
+/* Większe przyciski i pola */
+.opiekun-app button { min-height: 44px; }
+.opiekun-app input, .opiekun-app textarea { font-size: 16px !important; }
+
+/* Większe checkboxy */
+.opiekun-app [data-slot="checkbox"] { width: 24px !important; height: 24px !important; }
+
+/* Lepsza czytelność kart */
+.opiekun-app .rounded-xl { padding: 1.1rem !important; }
+
+@media (max-width: 430px) {
+  .opiekun-app { font-size: 18px; }
+  .opiekun-app .text-sm { font-size: 17px !important; }
+}

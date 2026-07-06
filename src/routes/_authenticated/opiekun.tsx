@@ -80,6 +80,8 @@ type Task = {
   task_name: string;
   completed: boolean;
   uwagi: string | null;
+  requires_response: boolean;
+  response: string | null;
 };
 
 type Vitals = {
@@ -244,7 +246,7 @@ function OpiekunApp() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="opiekun-app flex min-h-screen flex-col bg-background">
       {/* Header */}
       <header className="sticky top-0 z-20 flex items-center justify-between border-b bg-card px-4 py-3 shadow-sm">
         <div className="flex items-center gap-2">
@@ -593,7 +595,7 @@ function VisitScreen({
     queryFn: async () => {
       const { data, error } = await supabase
         .from("visit_tasks")
-        .select("id, task_name, completed")
+        .select("id, task_name, completed, uwagi, requires_response, response")
         .eq("visit_id", visitId)
         .order("task_name");
       if (error) throw error;
@@ -896,7 +898,7 @@ function NfcGpsStep({
         if (!isEntry) {
           const { data: tasks } = await supabase
             .from("visit_tasks")
-            .select("id, task_name, completed, uwagi")
+            .select("id, task_name, completed, uwagi, requires_response, response")
             .eq("visit_id", visit.id);
 
           const tasksWithUwagi = (tasks ?? []).filter((t: any) => !t.completed && t.uwagi);
@@ -1107,6 +1109,22 @@ function TasksStep({
 }) {
   const [expandedUwagi, setExpandedUwagi] = useState<string | null>(null);
   const [uwagi, setUwagi] = useState<Record<string, string>>({});
+  const [responses, setResponses] = useState<Record<string, string>>({});
+  const [savingResponse, setSavingResponse] = useState<string | null>(null);
+
+  const saveResponse = async (taskId: string) => {
+    setSavingResponse(taskId);
+    try {
+      await supabase
+        .from("visit_tasks")
+        .update({ response: responses[taskId] || null } as never)
+        .eq("id", taskId);
+      onRefresh();
+      toast.success("Odpowiedź zapisana");
+    } finally {
+      setSavingResponse(null);
+    }
+  };
 
   const toggleTask = async (task: Task) => {
     await supabase
@@ -1194,6 +1212,49 @@ function TasksStep({
             {t.uwagi && expandedUwagi !== t.id && !t.completed && (
               <div className="px-4 py-1.5 bg-amber-500/5 text-xs text-amber-700">
                 ⚠️ {t.uwagi}
+              </div>
+            )}
+
+            {/* Pole odpowiedzi — gdy koordynator zaznaczył "wymaga odpowiedzi" */}
+            {t.requires_response && (
+              <div className="px-4 py-3 bg-blue-500/5 border-t border-blue-200/50 space-y-2">
+                <p className="text-sm font-medium text-blue-800 flex items-center gap-1.5">
+                  <MessageSquare className="h-4 w-4" />
+                  Wymagana odpowiedź / wynik pomiaru:
+                </p>
+                {t.response && savingResponse !== t.id ? (
+                  <div className="space-y-1.5">
+                    <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-900">
+                      {t.response}
+                    </div>
+                    <button
+                      onClick={() => setResponses(r => ({ ...r, [t.id]: t.response ?? "" }))}
+                      className="text-xs text-blue-600 hover:text-blue-800 underline"
+                    >
+                      Edytuj odpowiedź
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Textarea
+                      rows={2}
+                      placeholder="Wpisz wynik, obserwację lub odpowiedź..."
+                      value={responses[t.id] ?? t.response ?? ""}
+                      onChange={e => setResponses(r => ({ ...r, [t.id]: e.target.value }))}
+                      className="text-sm resize-none border-blue-200 focus:border-blue-400"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={() => saveResponse(t.id)}
+                      disabled={savingResponse === t.id || !responses[t.id]?.trim()}
+                      className="w-full"
+                    >
+                      {savingResponse === t.id
+                        ? <Loader2 className="h-4 w-4 animate-spin" />
+                        : "Zapisz odpowiedź"}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>

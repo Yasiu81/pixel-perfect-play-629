@@ -65,7 +65,10 @@ const visitSchema = z
     caregiver_id: z.string().optional(),
     planned_start: z.string().min(1, "Wymagane"),
     planned_end: z.string().min(1, "Wymagane"),
-    planned_tasks: z.array(z.string()),
+    planned_tasks: z.array(z.object({
+      task_name: z.string(),
+      requires_response: z.boolean().default(false),
+    })),
     notes: z.string().trim().max(500).optional().or(z.literal("")),
   })
   .refine((d) => new Date(d.planned_end) > new Date(d.planned_start), {
@@ -530,7 +533,11 @@ function WizytyPage() {
       if (error) throw error;
       if (v.planned_tasks.length > 0) {
         const { error: tErr } = await supabase.from("visit_tasks").insert(
-          v.planned_tasks.map((t) => ({ visit_id: visit.id, task_name: t })),
+          v.planned_tasks.map((t) => ({
+            visit_id: visit.id,
+            task_name: t.task_name,
+            requires_response: t.requires_response,
+          })),
         );
         if (tErr) throw tErr;
       }
@@ -683,21 +690,34 @@ function WizytyPage() {
                             <div className="space-y-2 rounded-md border p-3">
                               <p className="text-xs font-medium text-muted-foreground">Z planu wsparcia:</p>
                               {planTasks.map((task) => {
-                                const checked = field.value.includes(task);
+                                const existing = field.value.find(t => t.task_name === task);
+                                const checked = !!existing;
                                 return (
-                                  <label
-                                    key={task}
-                                    className="flex cursor-pointer items-center gap-2 text-sm"
-                                  >
-                                    <Checkbox
-                                      checked={checked}
-                                      onCheckedChange={(c) => {
-                                        if (c) field.onChange([...field.value, task]);
-                                        else field.onChange(field.value.filter((t) => t !== task));
-                                      }}
-                                    />
-                                    <span>{task}</span>
-                                  </label>
+                                  <div key={task} className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <Checkbox
+                                        checked={checked}
+                                        onCheckedChange={(c) => {
+                                          if (c) field.onChange([...field.value, { task_name: task, requires_response: false }]);
+                                          else field.onChange(field.value.filter(t => t.task_name !== task));
+                                        }}
+                                      />
+                                      <span className="text-sm flex-1">{task}</span>
+                                      {checked && (
+                                        <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+                                          <Checkbox
+                                            checked={existing?.requires_response ?? false}
+                                            onCheckedChange={(c) => {
+                                              field.onChange(field.value.map(t =>
+                                                t.task_name === task ? { ...t, requires_response: !!c } : t
+                                              ));
+                                            }}
+                                          />
+                                          <span>+ pole odpowiedzi</span>
+                                        </label>
+                                      )}
+                                    </div>
+                                  </div>
                                 );
                               })}
                             </div>
@@ -707,22 +727,35 @@ function WizytyPage() {
                           <div className="rounded-md border p-3 space-y-2">
                             <p className="text-xs font-medium text-muted-foreground">Dodatkowe czynności dla tej wizyty:</p>
                             {field.value
-                              .filter((t) => !planTasks.includes(t))
+                              .filter(t => !planTasks.includes(t.task_name))
                               .map((task, idx) => (
-                                <div key={idx} className="flex items-center gap-2 text-sm">
-                                  <CheckSquare className="h-4 w-4 text-primary flex-shrink-0" />
-                                  <span className="flex-1">{task}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => field.onChange(field.value.filter((t) => t !== task))}
-                                    className="text-muted-foreground hover:text-destructive"
-                                  >
-                                    <X className="h-3.5 w-3.5" />
-                                  </button>
+                                <div key={idx} className="space-y-1">
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <CheckSquare className="h-4 w-4 text-primary flex-shrink-0" />
+                                    <span className="flex-1">{task.task_name}</span>
+                                    <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+                                      <Checkbox
+                                        checked={task.requires_response}
+                                        onCheckedChange={(c) => {
+                                          field.onChange(field.value.map(t =>
+                                            t.task_name === task.task_name ? { ...t, requires_response: !!c } : t
+                                          ));
+                                        }}
+                                      />
+                                      <span>+ pole odpowiedzi</span>
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => field.onChange(field.value.filter(t => t.task_name !== task.task_name))}
+                                      className="text-muted-foreground hover:text-destructive"
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             <AddCustomTaskInput
-                              onAdd={(task) => field.onChange([...field.value, task])}
+                              onAdd={(task) => field.onChange([...field.value, { task_name: task, requires_response: false }])}
                             />
                           </div>
 

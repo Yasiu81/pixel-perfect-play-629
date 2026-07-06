@@ -100,6 +100,7 @@ function OpiekunowiePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Caregiver | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   const { data: caregivers, isLoading } = useQuery({
     queryKey: ["caregivers-full"],
@@ -159,6 +160,9 @@ function OpiekunowiePage() {
             Zarządzanie zespołem — {caregivers?.length ?? 0} osób
           </p>
         </div>
+        <Button onClick={() => setAddOpen(true)}>
+          <Plus className="h-4 w-4" /> Dodaj opiekuna
+        </Button>
       </div>
 
       {/* Alert wygasające szkolenia */}
@@ -192,7 +196,7 @@ function OpiekunowiePage() {
           ) : !caregivers || caregivers.length === 0 ? (
             <div className="rounded-xl border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
               Brak opiekunów.<br />
-              Zarejestruj konto opiekuna przez ekran logowania i nadaj mu rolę caregiver w Supabase.
+              Kliknij <strong>"Dodaj opiekuna"</strong> aby utworzyć pierwsze konto.
             </div>
           ) : (
             caregivers.map((c) => {
@@ -326,6 +330,13 @@ function OpiekunowiePage() {
           caregiver={editTarget}
           open={editOpen}
           onClose={() => { setEditOpen(false); setEditTarget(null); }}
+        />
+      )}
+
+      {addOpen && (
+        <AddCaregiverDialog
+          open={addOpen}
+          onClose={() => setAddOpen(false)}
         />
       )}
     </div>
@@ -831,6 +842,138 @@ function AddEquipmentDialog({
               <Button type="submit" disabled={mut.isPending}>
                 {mut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
                 Zapisz wydanie
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Dialog: dodaj opiekuna ───────────────────────────────────────────────────
+
+const addCaregiverSchema = z.object({
+  imie: z.string().trim().min(1, "Wymagane").max(80),
+  nazwisko: z.string().trim().min(1, "Wymagane").max(80),
+  email: z.string().trim().email("Niepoprawny email"),
+  password: z.string().min(8, "Min. 8 znaków"),
+  telefon: z.string().trim().max(20).optional().or(z.literal("")),
+  rola: z.string().min(1),
+  dzielnice: z.string().trim().optional().or(z.literal("")),
+});
+
+type AddCaregiverForm = z.infer<typeof addCaregiverSchema>;
+
+function AddCaregiverDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const form = useForm<AddCaregiverForm>({
+    resolver: zodResolver(addCaregiverSchema),
+    defaultValues: { imie: "", nazwisko: "", email: "", password: "", telefon: "", rola: "opiekun", dzielnice: "" },
+  });
+
+  const mut = useMutation({
+    mutationFn: async (v: AddCaregiverForm) => {
+      // 1. Utwórz konto Supabase Auth
+      const { data: signUp, error: signUpErr } = await supabase.auth.signUp({
+        email: v.email.trim(),
+        password: v.password,
+      });
+      if (signUpErr) throw signUpErr;
+      if (!signUp.user) throw new Error("Nie udało się utworzyć konta");
+
+      const uid = signUp.user.id;
+
+      // 2. Nadaj rolę caregiver
+      const { error: roleErr } = await supabase.from("user_roles").insert({ user_id: uid, role: "caregiver" });
+      if (roleErr) throw roleErr;
+
+      // 3. Uzupełnij profil
+      const dzielnice = v.dzielnice
+        ? v.dzielnice.split(",").map(d => d.trim()).filter(Boolean)
+        : [];
+
+      const { error: profileErr } = await supabase.from("profiles").upsert({
+        id: uid,
+        imie: v.imie.trim(),
+        nazwisko: v.nazwisko.trim(),
+        email: v.email.trim(),
+        telefon: v.telefon?.trim() || null,
+        rola: v.rola,
+        dzielnice: dzielnice.length > 0 ? dzielnice : null,
+      });
+      if (profileErr) throw profileErr;
+    },
+    onSuccess: (_data, v) => {
+      toast.success(`Konto opiekuna utworzone. Dane logowania: ${v.email} / ${v.password}`);
+      qc.invalidateQueries({ queryKey: ["caregivers-full"] });
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Dodaj opiekuna</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">
+          Zostanie utworzone konto logowania. Przekaż dane logowania opiekunowi osobiście.
+        </p>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(v => mut.mutate(v))} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="imie" render={({ field }) => (
+                <FormItem><FormLabel>Imię *</FormLabel>
+                  <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="nazwisko" render={({ field }) => (
+                <FormItem><FormLabel>Nazwisko *</FormLabel>
+                  <FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
+              )} />
+            </div>
+            <FormField control={form.control} name="email" render={({ field }) => (
+              <FormItem><FormLabel>E-mail *</FormLabel>
+                <FormControl><Input type="email" placeholder="opiekun@email.pl" {...field} /></FormControl>
+                <FormMessage /></FormItem>
+            )} />
+            <FormField control={form.control} name="password" render={({ field }) => (
+              <FormItem><FormLabel>Hasło tymczasowe *</FormLabel>
+                <FormControl><Input type="text" placeholder="min. 8 znaków" {...field} /></FormControl>
+                <p className="text-xs text-muted-foreground">Przekaż hasło osobiście — nie jest wysyłane automatycznie.</p>
+                <FormMessage /></FormItem>
+            )} />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="telefon" render={({ field }) => (
+                <FormItem><FormLabel>Telefon</FormLabel>
+                  <FormControl><Input placeholder="500 100 200" {...field} value={field.value ?? ""} /></FormControl>
+                  <FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="rola" render={({ field }) => (
+                <FormItem><FormLabel>Rola *</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="opiekun">Opiekun</SelectItem>
+                      <SelectItem value="opiekun_specjalistyczny">Opiekun specjalistyczny</SelectItem>
+                      <SelectItem value="opiekun_psychiatryczny">Opiekun spec. psychiatryczny</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage /></FormItem>
+              )} />
+            </div>
+            <FormField control={form.control} name="dzielnice" render={({ field }) => (
+              <FormItem><FormLabel>Rejony / dzielnice</FormLabel>
+                <FormControl><Input placeholder="np. Śródmieście, Wrzeszcz" {...field} value={field.value ?? ""} /></FormControl>
+                <p className="text-xs text-muted-foreground">Rozdziel przecinkami</p>
+                <FormMessage /></FormItem>
+            )} />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={onClose} disabled={mut.isPending}>Anuluj</Button>
+              <Button type="submit" disabled={mut.isPending}>
+                {mut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Utwórz konto
               </Button>
             </DialogFooter>
           </form>
