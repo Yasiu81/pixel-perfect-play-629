@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, CalendarCheck, Clock, Users,
@@ -112,21 +112,6 @@ function PulpitPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
   const [defaultDate, setDefaultDate] = useState(today.toISOString().split("T")[0]);
-
-  // Wykrywanie trybu druku — kompresujemy wysokość siatki godzinowej,
-  // żeby cały tydzień/dzień zmieścił się na jednej stronie A4 poziomo.
-  // Nasłuchujemy matchMedia zamiast tylko beforeprint/afterprint, bo to
-  // samo działa też przy emulacji CSS "print" w DevTools (Rendering).
-  const [isPrint, setIsPrint] = useState(false);
-  useEffect(() => {
-    const mql = window.matchMedia("print");
-    const handler = (e: MediaQueryListEvent | MediaQueryList) => setIsPrint(e.matches);
-    handler(mql);
-    mql.addEventListener?.("change", handler as (e: MediaQueryListEvent) => void);
-    window.addEventListener("beforeprint", () => setIsPrint(true));
-    window.addEventListener("afterprint", () => setIsPrint(false));
-    return () => mql.removeEventListener?.("change", handler as (e: MediaQueryListEvent) => void);
-  }, []);
 
   // Zakresy dat dla zapytań
   const weekEnd = new Date(weekStart);
@@ -283,24 +268,25 @@ function PulpitPage() {
       <div className="rounded-xl border bg-card shadow-sm" data-print-area>
         {/* Nagłówek wydruku — widoczny tylko przy druku */}
         <div className="print-header hidden">
-          <div className="print-logo" />
           <h1>
             {filterSenior !== NO_FILTER
               ? `Grafik wizyt — senior: ${seniors?.find(s => s.id === filterSenior)?.nazwisko} ${seniors?.find(s => s.id === filterSenior)?.imie}`
               : "Grafik wizyt"}
           </h1>
-          <p>
-            Okres: {periodLabel}
-            {" · "}Widok: {viewMode === "week" ? "Tydzień" : viewMode === "day" ? "Dzień" : "Miesiąc"}
-            {" · "}Wydrukowano: {new Date().toLocaleDateString("pl-PL", { day: "numeric", month: "long", year: "numeric" })} o godz. {new Date().toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })}
-          </p>
-          <p>
-            Filtr — senior: {filterSenior !== NO_FILTER
-              ? `${seniors?.find(s => s.id === filterSenior)?.nazwisko} ${seniors?.find(s => s.id === filterSenior)?.imie}`
-              : "wszyscy seniorzy"}
-            {" · "}Filtr — opiekun: {filterCaregiver !== NO_FILTER
-              ? `${caregivers?.find(c => c.id === filterCaregiver)?.nazwisko} ${caregivers?.find(c => c.id === filterCaregiver)?.imie}`
-              : "wszyscy opiekunowie"}
+          <p className="print-header-line">
+            <span>
+              Okres: {periodLabel}
+              {" · "}Widok: {viewMode === "week" ? "Tydzień" : viewMode === "day" ? "Dzień" : "Miesiąc"}
+              {" · "}Wydrukowano: {new Date().toLocaleDateString("pl-PL", { day: "numeric", month: "long", year: "numeric" })} o godz. {new Date().toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+            <span className="print-header-gap">
+              Filtr — senior: {filterSenior !== NO_FILTER
+                ? `${seniors?.find(s => s.id === filterSenior)?.nazwisko} ${seniors?.find(s => s.id === filterSenior)?.imie}`
+                : "wszyscy seniorzy"}
+              {" · "}Filtr — opiekun: {filterCaregiver !== NO_FILTER
+                ? `${caregivers?.find(c => c.id === filterCaregiver)?.nazwisko} ${caregivers?.find(c => c.id === filterCaregiver)?.imie}`
+                : "wszyscy opiekunowie"}
+            </span>
           </p>
         </div>
         {/* Pasek kontrolny kalendarza — ukrywany na wydruku przez [data-print-hide] */}
@@ -363,15 +349,14 @@ function PulpitPage() {
           </div>
         </div>
 
-        {/* Treść kalendarza */}
-        <div className="overflow-hidden">
+        {/* Treść kalendarza — na wydruku pomniejszana (zoom), żeby zmieścić się na 1 stronie */}
+        <div className="overflow-hidden" data-print-zoom>
           {viewMode === "week" && (
             <WeekView
               weekStart={weekStart}
               visits={filteredVisits}
               cgMap={cgMap}
               today={today}
-              hourPx={isPrint ? 30 : 56}
               onVisitClick={setSelectedVisit}
               onDayClick={(d) => {
                 setDefaultDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
@@ -385,7 +370,6 @@ function PulpitPage() {
               visits={filteredVisits}
               cgMap={cgMap}
               today={today}
-              hourPx={isPrint ? 32 : 64}
               onVisitClick={setSelectedVisit}
             />
           )}

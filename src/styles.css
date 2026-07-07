@@ -266,8 +266,8 @@
     margin: 0 !important;
   }
 
-  /* Strona A4 pozioma */
-  @page { size: A4 landscape; margin: 10mm 12mm; }
+  /* Strona A4 pozioma — minimalne, ale bezpieczne marginesy drukarki */
+  @page { size: A4 landscape; margin: 4mm; }
 
   html, body { width: 100%; }
   body { font-size: 10px; color: #111; background: #fff; }
@@ -275,12 +275,26 @@
   /* Nagłówek wydruku: okres, widok, data/godzina wydruku, filtry */
   .print-header {
     display: block !important;
-    margin-bottom: 6mm;
-    padding-bottom: 3mm;
+    margin-bottom: 4mm;
+    padding-bottom: 2mm;
     border-bottom: 2px solid #0F6E56;
   }
-  .print-header h1 { font-size: 16px; font-weight: 700; color: #0F6E56; margin: 0 0 2px; }
-  .print-header p  { font-size: 10.5px; color: #444; margin: 1px 0; }
+  .print-header h1 { font-size: 16px; font-weight: 700; color: #0F6E56; margin: 0 0 3px; }
+  .print-header-line {
+    display: flex;
+    align-items: baseline;
+    font-size: 10.5px;
+    color: #444;
+    margin: 0;
+    white-space: nowrap;
+  }
+  .print-header-gap { margin-left: 16mm; }
+
+  /* Siatka kalendarza — pomniejszona (zoom), żeby zmieścić się na 1 stronie.
+     Zoom (w odróżnieniu od transform:scale) realnie zmniejsza zajmowaną
+     przestrzeń przy paginacji druku, dokładnie tak jak ręczna skala ~65%
+     w oknie drukowania przeglądarki. */
+  [data-print-zoom] { zoom: 0.65; }
 
   /* Siatka kalendarza — zmieść w jednej stronie, bez przewijania */
   table, .grid { page-break-inside: avoid; }
@@ -292,12 +306,4 @@
   [class*="bg-emerald-100"]{ background: #d1fae5 !important; border: 1px solid #6ee7b7 !important; }
   [class*="bg-red-100"]    { background: #fee2e2 !important; border: 1px solid #fca5a5 !important; }
   [class*="bg-orange-100"] { background: #ffedd5 !important; border: 1px solid #fdba74 !important; }
-
-  /* Logo Plan Seniora w nagłówku wydruku */
-  .print-logo::before {
-    content: "Plan Seniora";
-    font-weight: 700;
-    color: #0F6E56;
-    font-size: 13px;
-  }
 }
