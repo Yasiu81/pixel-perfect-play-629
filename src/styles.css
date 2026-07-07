@@ -174,14 +174,11 @@
 
 /* ─── Style druku dla raportów ─────────────────────────────────────────────── */
 @media print {
-  /* Ukryj wszystko oprócz treści raportu */
-  body > * { display: none !important; }
-
-  /* Pokaż tylko obszar oznaczony jako drukowany oraz główną treść */
-  [data-print-area],
-  main { display: block !important; }
-
-  /* Ukryj sidebar, nagłówek, przyciski */
+  /* Ukryj elementy interfejsu — bez ukrywania kontenerów-rodziców treści.
+     UWAGA: nie ukrywamy tu "body > *" / a potem nie "odkrywamy" main —
+     jeśli rodzic ma display:none, żadne dziecko nie może się "odkryć"
+     ustawiając sobie display:block. Ukrywamy więc tylko konkretne,
+     dobrze zidentyfikowane elementy chrome (sidebar, header, nav, KPI). */
   aside,
   header,
   nav,

@@ -239,8 +239,8 @@ function PulpitPage() {
 
   return (
     <div className="space-y-6">
-      {/* Nagłówek */}
-      <div>
+      {/* Nagłówek — ukrywany na wydruku */}
+      <div data-print-hide>
         <h1 className="text-2xl font-semibold tracking-tight">Pulpit</h1>
         <p className="text-sm text-muted-foreground">Przegląd działalności firmy w czasie rzeczywistym.</p>
       </div>
