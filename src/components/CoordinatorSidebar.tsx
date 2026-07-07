@@ -1,26 +1,27 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, CalendarClock, FileBarChart, LogOut, UserCog, CalendarDays } from "lucide-react";
 import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
+  LayoutDashboard, Users, CalendarClock,
+  FileBarChart, LogOut, UserCog, History, Settings,
+} from "lucide-react";
+import {
+  Sidebar, SidebarContent, SidebarFooter,
+  SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
+  SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
+  SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { supabase } from "@/integrations/supabase/client";
 
-const items = [
-  { title: "Pulpit", url: "/pulpit", icon: LayoutDashboard },
-  { title: "Seniorzy", url: "/seniorzy", icon: Users },
-  { title: "Opiekunowie", url: "/opiekunowie", icon: UserCog },
-  { title: "Kalendarz", url: "/kalendarz", icon: CalendarDays },
-  { title: "Monitor wizyt", url: "/wizyty", icon: CalendarClock },
-  { title: "Raporty", url: "/raporty", icon: FileBarChart },
+const mainItems = [
+  { title: "Pulpit",        url: "/pulpit",      icon: LayoutDashboard },
+  { title: "Opiekunowie",   url: "/opiekunowie", icon: UserCog },
+  { title: "Seniorzy",      url: "/seniorzy",    icon: Users },
+  { title: "Monitor wizyt", url: "/wizyty",      icon: CalendarClock },
+  { title: "Raporty",       url: "/raporty",     icon: FileBarChart },
+];
+
+const bottomItems = [
+  { title: "Historia logowania", url: "/historia", icon: History,  disabled: true },
+  { title: "Ustawienia",         url: "/ustawienia", icon: Settings, disabled: true },
 ];
 
 export function CoordinatorSidebar() {
@@ -36,7 +37,7 @@ export function CoordinatorSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
         <div className="flex items-center gap-2 px-2 py-2">
-          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground font-semibold">
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground font-semibold text-sm">
             PS
           </div>
           <div className="flex flex-col leading-tight group-data-[collapsible=icon]:hidden">
@@ -51,7 +52,7 @@ export function CoordinatorSidebar() {
           <SidebarGroupLabel>Nawigacja</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {items.map((item) => {
+              {mainItems.map((item) => {
                 const active = pathname === item.url || pathname.startsWith(item.url + "/");
                 return (
                   <SidebarMenuItem key={item.url}>
@@ -64,6 +65,28 @@ export function CoordinatorSidebar() {
                   </SidebarMenuItem>
                 );
               })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarSeparator />
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Konto</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {bottomItems.map((item) => (
+                <SidebarMenuItem key={item.url}>
+                  <SidebarMenuButton
+                    tooltip={item.title}
+                    className="opacity-50 cursor-not-allowed"
+                    disabled
+                  >
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.title}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
