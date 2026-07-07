@@ -290,11 +290,25 @@
   }
   .print-header-gap { margin-left: 16mm; }
 
-  /* Siatka kalendarza — pomniejszona (zoom), żeby zmieścić się na 1 stronie.
-     Zoom (w odróżnieniu od transform:scale) realnie zmniejsza zajmowaną
-     przestrzeń przy paginacji druku, dokładnie tak jak ręczna skala ~65%
-     w oknie drukowania przeglądarki. */
-  [data-print-zoom] { zoom: 0.65; }
+  /* Siatka kalendarza (tydzień/dzień) — pomniejszona (zoom), żeby zmieścić
+     się na 1 stronie. Zoom (w odróżnieniu od transform:scale) realnie
+     zmniejsza zajmowaną przestrzeń przy paginacji druku, dokładnie tak
+     jak ręczna skala ~65% w oknie drukowania przeglądarki. Widok dnia ma
+     wyższe wiersze (64px/h) niż tydzień (56px/h), więc dajemy trochę
+     więcej zapasu niż same 65%. */
+  [data-print-zoom] { zoom: 0.6; }
+
+  /* Siatka miesiąca — rozciągamy wiersze, żeby wypełnić całą stronę
+     zamiast zostawiać pustą przestrzeń u dołu przy miesiącach z 5 zamiast
+     6 wierszami. Liczba wierszy (--month-rows) jest ustawiana w JSX. */
+  [data-month-grid] {
+    grid-template-rows: repeat(var(--month-rows, 6), 1fr) !important;
+    height: 165mm;
+  }
+  [data-month-cell] {
+    min-height: 0 !important;
+    height: 100%;
+  }
 
   /* Siatka kalendarza — zmieść w jednej stronie, bez przewijania */
   table, .grid { page-break-inside: avoid; }

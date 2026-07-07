@@ -349,8 +349,8 @@ function PulpitPage() {
           </div>
         </div>
 
-        {/* Treść kalendarza — na wydruku pomniejszana (zoom), żeby zmieścić się na 1 stronie */}
-        <div className="overflow-hidden" data-print-zoom>
+        {/* Treść kalendarza */}
+        <div className="overflow-hidden">
           {viewMode === "week" && (
             <WeekView
               weekStart={weekStart}
@@ -438,7 +438,7 @@ function WeekView({ weekStart, visits, cgMap, today, onVisitClick, onDayClick, h
   const TOTAL_H = HOURS.length * hourPx;
 
   return (
-    <div className="overflow-auto" style={{ maxHeight: "580px" }}>
+    <div className="overflow-auto" style={{ maxHeight: "580px" }} data-print-zoom>
       <div className="grid" style={{ gridTemplateColumns: "52px repeat(7, 1fr)", minWidth: "700px" }}>
         {/* Nagłówki dni */}
         <div className="border-b bg-muted/20" />
@@ -552,7 +552,7 @@ function DayView({ day, visits, cgMap, today, onVisitClick, hourPx = 64 }: {
   }
 
   return (
-    <div className="overflow-auto" style={{ maxHeight: "580px" }}>
+    <div className="overflow-auto" style={{ maxHeight: "580px" }} data-print-zoom>
       <div className="grid" style={{ gridTemplateColumns: "52px 1fr", minWidth: "400px" }}>
         <div /><div className="border-b py-3 text-center">
           <div className="text-sm font-semibold">{day.toLocaleDateString("pl-PL",{weekday:"long",day:"numeric",month:"long"})}</div>
@@ -620,6 +620,11 @@ function MonthView({ year, month, visits, cgMap, today, onVisitClick, onDayClick
     visitsByDay[d].push(v);
   });
 
+  // Liczba wierszy siatki (5 lub 6) — używana na wydruku, żeby wiersze
+  // rozciągnęły się równo i wypełniły całą stronę zamiast zostawiać pustą
+  // przestrzeń u dołu przy miesiącach z mniejszą liczbą wierszy.
+  const monthRows = Math.ceil((firstMonday + daysInMonth) / 7);
+
   return (
     <div>
       <div className="grid grid-cols-7 border-b bg-muted/20">
@@ -627,9 +632,13 @@ function MonthView({ year, month, visits, cgMap, today, onVisitClick, onDayClick
           <div key={d} className="py-2 text-center text-xs font-semibold text-muted-foreground">{d}</div>
         ))}
       </div>
-      <div className="grid grid-cols-7">
+      <div
+        className="grid grid-cols-7"
+        data-month-grid
+        style={{ "--month-rows": monthRows } as any}
+      >
         {Array.from({length:firstMonday}).map((_,i) => (
-          <div key={`e-${i}`} className="min-h-[90px] border-b border-r bg-muted/10" />
+          <div key={`e-${i}`} className="min-h-[90px] border-b border-r bg-muted/10" data-month-cell />
         ))}
         {Array.from({length:daysInMonth}).map((_,i) => {
           const day = i+1;
@@ -640,6 +649,7 @@ function MonthView({ year, month, visits, cgMap, today, onVisitClick, onDayClick
           return (
             <div
               key={day}
+              data-month-cell
               className={`min-h-[90px] border-b border-r p-1.5 cursor-pointer hover:bg-accent/30 transition-colors ${isWeekend ? "bg-muted/10" : ""}`}
               onClick={() => onDayClick(new Date(year, month, day))}
             >
