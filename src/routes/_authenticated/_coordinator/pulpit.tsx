@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, CalendarCheck, Clock, Users,
@@ -112,6 +112,21 @@ function PulpitPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
   const [defaultDate, setDefaultDate] = useState(today.toISOString().split("T")[0]);
+
+  // Wykrywanie trybu druku — kompresujemy wysokość siatki godzinowej,
+  // żeby cały tydzień/dzień zmieścił się na jednej stronie A4 poziomo.
+  // Nasłuchujemy matchMedia zamiast tylko beforeprint/afterprint, bo to
+  // samo działa też przy emulacji CSS "print" w DevTools (Rendering).
+  const [isPrint, setIsPrint] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia("print");
+    const handler = (e: MediaQueryListEvent | MediaQueryList) => setIsPrint(e.matches);
+    handler(mql);
+    mql.addEventListener?.("change", handler as (e: MediaQueryListEvent) => void);
+    window.addEventListener("beforeprint", () => setIsPrint(true));
+    window.addEventListener("afterprint", () => setIsPrint(false));
+    return () => mql.removeEventListener?.("change", handler as (e: MediaQueryListEvent) => void);
+  }, []);
 
   // Zakresy dat dla zapytań
   const weekEnd = new Date(weekStart);
@@ -356,6 +371,7 @@ function PulpitPage() {
               visits={filteredVisits}
               cgMap={cgMap}
               today={today}
+              hourPx={isPrint ? 30 : 56}
               onVisitClick={setSelectedVisit}
               onDayClick={(d) => {
                 setDefaultDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
@@ -369,6 +385,7 @@ function PulpitPage() {
               visits={filteredVisits}
               cgMap={cgMap}
               today={today}
+              hourPx={isPrint ? 32 : 64}
               onVisitClick={setSelectedVisit}
             />
           )}
@@ -409,9 +426,9 @@ function PulpitPage() {
 }
 
 // ─── WIDOK TYGODNIOWY ─────────────────────────────────────────────────────────
-function WeekView({ weekStart, visits, cgMap, today, onVisitClick, onDayClick }: {
+function WeekView({ weekStart, visits, cgMap, today, onVisitClick, onDayClick, hourPx = 56 }: {
   weekStart: Date; visits: Visit[]; cgMap: Record<string,string>;
-  today: Date; onVisitClick: (v: Visit) => void; onDayClick: (d: Date) => void;
+  today: Date; onVisitClick: (v: Visit) => void; onDayClick: (d: Date) => void; hourPx?: number;
 }) {
   const days = Array.from({length:7}, (_,i) => {
     const d = new Date(weekStart); d.setDate(weekStart.getDate()+i); return d;
@@ -434,7 +451,7 @@ function WeekView({ weekStart, visits, cgMap, today, onVisitClick, onDayClick }:
     );
   });
 
-  const TOTAL_H = HOURS.length * 56; // px per hour = 56
+  const TOTAL_H = HOURS.length * hourPx;
 
   return (
     <div className="overflow-auto" style={{ maxHeight: "580px" }}>
@@ -465,7 +482,7 @@ function WeekView({ weekStart, visits, cgMap, today, onVisitClick, onDayClick }:
         {/* Siatka godzinowa */}
         <div>
           {HOURS.map(h => (
-            <div key={h} className="flex items-start justify-end pr-2 border-b" style={{height:"56px"}}>
+            <div key={h} className="flex items-start justify-end pr-2 border-b" style={{height:`${hourPx}px`}}>
               <span className="text-xs text-muted-foreground mt-1">{String(h).padStart(2,"0")}:00</span>
             </div>
           ))}
@@ -483,7 +500,7 @@ function WeekView({ weekStart, visits, cgMap, today, onVisitClick, onDayClick }:
             >
               {/* Linie godzinowe */}
               {HOURS.map((_,i) => (
-                <div key={i} className="absolute w-full border-b border-border/30" style={{top:`${i*56}px`}} />
+                <div key={i} className="absolute w-full border-b border-border/30" style={{top:`${i*hourPx}px`}} />
               ))}
               {/* Linia "teraz" */}
               {isToday && (() => {
@@ -510,7 +527,7 @@ function WeekView({ weekStart, visits, cgMap, today, onVisitClick, onDayClick }:
                     className={`absolute left-0.5 right-0.5 rounded-md border px-1.5 py-1 text-xs overflow-hidden cursor-pointer hover:brightness-95 hover:shadow-md transition-all z-20 ${VISIT_TONE[v.status] ?? "bg-muted"}`}
                     style={{
                       top: `${(top/100)*TOTAL_H}px`,
-                      height: `${Math.max(22, (height/100)*TOTAL_H)}px`,
+                      height: `${Math.max(hourPx*0.4, (height/100)*TOTAL_H)}px`,
                     }}
                     title={`${v.senior?.nazwisko} ${v.senior?.imie} · ${fmtTime(v.planned_start)} – ${fmtTime(v.planned_end)}${v.caregiver_id && cgMap[v.caregiver_id] ? " · " + cgMap[v.caregiver_id] : ""}`}
                     onClick={(e) => { e.stopPropagation(); onVisitClick(v); }}
@@ -532,15 +549,15 @@ function WeekView({ weekStart, visits, cgMap, today, onVisitClick, onDayClick }:
 }
 
 // ─── WIDOK DZIENNY ────────────────────────────────────────────────────────────
-function DayView({ day, visits, cgMap, today, onVisitClick }: {
+function DayView({ day, visits, cgMap, today, onVisitClick, hourPx = 64 }: {
   day: Date; visits: Visit[]; cgMap: Record<string,string>;
-  today: Date; onVisitClick: (v: Visit) => void;
+  today: Date; onVisitClick: (v: Visit) => void; hourPx?: number;
 }) {
   const dayVisits = visits.filter(v =>
     new Date(v.planned_start).toDateString() === day.toDateString()
   );
   const isToday = day.toDateString() === today.toDateString();
-  const TOTAL_H = HOURS.length * 64;
+  const TOTAL_H = HOURS.length * hourPx;
 
   function topPct(iso: string) {
     const d = new Date(iso);
@@ -559,13 +576,13 @@ function DayView({ day, visits, cgMap, today, onVisitClick }: {
         </div>
         <div>
           {HOURS.map(h => (
-            <div key={h} className="flex items-start justify-end pr-2 border-b" style={{height:"64px"}}>
+            <div key={h} className="flex items-start justify-end pr-2 border-b" style={{height:`${hourPx}px`}}>
               <span className="text-xs text-muted-foreground mt-1">{String(h).padStart(2,"0")}:00</span>
             </div>
           ))}
         </div>
         <div className={`relative border-l ${isToday ? "bg-primary/[0.02]" : ""}`} style={{height:`${TOTAL_H}px`}}>
-          {HOURS.map((_,i) => <div key={i} className="absolute w-full border-b border-border/30" style={{top:`${i*64}px`}} />)}
+          {HOURS.map((_,i) => <div key={i} className="absolute w-full border-b border-border/30" style={{top:`${i*hourPx}px`}} />)}
           {isToday && (() => {
             const now = new Date();
             const top = ((now.getHours()-6)*60+now.getMinutes())/(15*60)*100;
@@ -586,7 +603,7 @@ function DayView({ day, visits, cgMap, today, onVisitClick }: {
               <div
                 key={v.id}
                 className={`absolute left-1 right-1 rounded-lg border px-2 py-1.5 cursor-pointer hover:brightness-95 hover:shadow-md transition-all z-20 ${VISIT_TONE[v.status] ?? "bg-muted"}`}
-                style={{top:`${(top/100)*TOTAL_H}px`,height:`${Math.max(28,(height/100)*TOTAL_H)}px`}}
+                style={{top:`${(top/100)*TOTAL_H}px`,height:`${Math.max(hourPx*0.45,(height/100)*TOTAL_H)}px`}}
                 onClick={() => onVisitClick(v)}
               >
                 <div className="font-semibold text-sm leading-tight">{v.senior?.nazwisko} {v.senior?.imie}</div>
