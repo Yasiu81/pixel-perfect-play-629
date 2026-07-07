@@ -245,8 +245,8 @@ function PulpitPage() {
         <p className="text-sm text-muted-foreground">Przegląd działalności firmy w czasie rzeczywistym.</p>
       </div>
 
-      {/* KPI */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {/* KPI — ukrywane na wydruku przez [data-print-hide] */}
+      <div data-print-hide className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard to="/seniorzy" label="Aktywni seniorzy" value={stats?.activeSeniors}
           loading={statsLoading} icon={<Users className="h-5 w-5"/>} tone="primary"
           hint="Podopieczni o statusie aktywny" />
@@ -265,25 +265,31 @@ function PulpitPage() {
       </div>
 
       {/* Kalendarz */}
-      <div className="rounded-xl border bg-card shadow-sm">
+      <div className="rounded-xl border bg-card shadow-sm" data-print-area>
         {/* Nagłówek wydruku — widoczny tylko przy druku */}
         <div className="print-header hidden">
           <div className="print-logo" />
           <h1>
             {filterSenior !== NO_FILTER
-              ? `Grafik wizyt — ${seniors?.find(s => s.id === filterSenior)?.nazwisko} ${seniors?.find(s => s.id === filterSenior)?.imie}`
-              : filterCaregiver !== NO_FILTER
-              ? `Grafik opiekuna — ${caregivers?.find(c => c.id === filterCaregiver)?.nazwisko} ${caregivers?.find(c => c.id === filterCaregiver)?.imie}`
-              : "Grafik wizyt — wszyscy seniorzy"}
+              ? `Grafik wizyt — senior: ${seniors?.find(s => s.id === filterSenior)?.nazwisko} ${seniors?.find(s => s.id === filterSenior)?.imie}`
+              : "Grafik wizyt"}
           </h1>
           <p>
-            Okres: {periodLabel} · Wygenerowano: {new Date().toLocaleDateString("pl-PL", { day: "numeric", month: "long", year: "numeric" })}
-            {filterSenior !== NO_FILTER && " · Typ: grafik dla seniora (opiekunowie)"}
-            {filterCaregiver !== NO_FILTER && " · Typ: grafik dla opiekuna (seniorzy)"}
+            Okres: {periodLabel}
+            {" · "}Widok: {viewMode === "week" ? "Tydzień" : viewMode === "day" ? "Dzień" : "Miesiąc"}
+            {" · "}Wydrukowano: {new Date().toLocaleDateString("pl-PL", { day: "numeric", month: "long", year: "numeric" })} o godz. {new Date().toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })}
+          </p>
+          <p>
+            Filtr — senior: {filterSenior !== NO_FILTER
+              ? `${seniors?.find(s => s.id === filterSenior)?.nazwisko} ${seniors?.find(s => s.id === filterSenior)?.imie}`
+              : "wszyscy seniorzy"}
+            {" · "}Filtr — opiekun: {filterCaregiver !== NO_FILTER
+              ? `${caregivers?.find(c => c.id === filterCaregiver)?.nazwisko} ${caregivers?.find(c => c.id === filterCaregiver)?.imie}`
+              : "wszyscy opiekunowie"}
           </p>
         </div>
-        {/* Pasek kontrolny kalendarza */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
+        {/* Pasek kontrolny kalendarza — ukrywany na wydruku przez [data-print-hide] */}
+        <div data-print-hide className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={prevPeriod}>
               <ChevronLeft className="h-4 w-4" />
@@ -651,6 +657,11 @@ function MonthView({ year, month, visits, cgMap, today, onVisitClick, onDayClick
                   >
                     <span className="font-medium">{fmtTime(v.planned_start)}</span>{" "}
                     <span className="opacity-80">{v.senior?.nazwisko}</span>
+                    {v.caregiver_id && cgMap[v.caregiver_id] && (
+                      <span className="hidden print:block opacity-70 text-[9px] leading-tight truncate">
+                        {fmtTime(v.planned_start)}–{fmtTime(v.planned_end)} · {cgMap[v.caregiver_id]}
+                      </span>
+                    )}
                   </div>
                 ))}
                 {dayVisits.length > 3 && (

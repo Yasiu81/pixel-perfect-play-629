@@ -14,10 +14,11 @@
   header,
   nav,
   [data-sidebar],
-  .print\\:hidden { display: none !important; }
+  .print\:hidden,
+  [data-print-hide] { display: none !important; }
 
   /* Pokaż elementy oznaczone print:block */
-  .print\\:block { display: block !important; }
+  .print\:block { display: block !important; }
 
   /* Strona A4 */
   @page { size: A4; margin: 15mm 12mm; }
@@ -78,54 +79,50 @@
    Ukrywa wszystko oprócz obszaru kalendarza, dodaje nagłówek z kontekstem  */
 
 @media print {
-  /* Ukryj elementy UI — tylko kalendarz */
+  /* Ukryj elementy UI — tylko kalendarz.
+     [data-print-hide] jest jawnie dodawany w JSX do KPI oraz do paska
+     kontrolnego kalendarza, więc ukrywanie nie zależy od konkretnych
+     klas Tailwind, które mogą się zmienić przy edycji layoutu. */
   aside,
   header,
   nav,
-  .print\\:hidden,
   [data-sidebar],
-  /* KPI kafelki nad kalendarzem */
-  .grid.grid-cols-1.gap-4.sm\\:grid-cols-2 { display: none !important; }
+  [data-print-hide] { display: none !important; }
 
   /* Pokaż tylko kartę kalendarza */
-  .rounded-xl.border.bg-card.shadow-sm { display: block !important; box-shadow: none !important; border: none !important; }
+  [data-print-area] {
+    display: block !important;
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+  }
 
-  /* Pasek kontrolny kalendarza — ukryj przyciski nawigacji, zostaw tylko label */
-  .rounded-xl.border.bg-card.shadow-sm > div:first-child button,
-  .rounded-xl.border.bg-card.shadow-sm > div:first-child select,
-  .rounded-xl.border.bg-card.shadow-sm > div:first-child [role="combobox"] { display: none !important; }
-
-  /* Strona A4 poziomo */
+  /* Strona A4 pozioma */
   @page { size: A4 landscape; margin: 10mm 12mm; }
 
+  html, body { width: 100%; }
   body { font-size: 10px; color: #111; background: #fff; }
 
-  /* Nagłówek wydruku — dodawany przez data-print-title */
+  /* Nagłówek wydruku: okres, widok, data/godzina wydruku, filtry */
   .print-header {
     display: block !important;
-    margin-bottom: 8mm;
-    padding-bottom: 4mm;
+    margin-bottom: 6mm;
+    padding-bottom: 3mm;
     border-bottom: 2px solid #0F6E56;
   }
   .print-header h1 { font-size: 16px; font-weight: 700; color: #0F6E56; margin: 0 0 2px; }
-  .print-header p  { font-size: 11px; color: #555; margin: 0; }
+  .print-header p  { font-size: 10.5px; color: #444; margin: 1px 0; }
 
-  /* Ukryj header z przyciskami — zostaw tylko text */
-  .rounded-xl.border.bg-card.shadow-sm > div:first-child {
-    justify-content: flex-start !important;
-    padding: 0 0 6px !important;
-    border-bottom: 1px solid #e5e7eb !important;
-  }
-
-  /* Siatka kalendarza */
+  /* Siatka kalendarza — zmieść w jednej stronie, bez przewijania */
   table, .grid { page-break-inside: avoid; }
   .overflow-auto { overflow: visible !important; max-height: none !important; }
 
-  /* Bloczki wizyt — czytelne */
+  /* Bloczki wizyt — czytelne kolory i wyraźne ramki */
   [class*="bg-sky-100"]    { background: #e0f2fe !important; border: 1px solid #7dd3fc !important; }
   [class*="bg-amber-100"]  { background: #fef3c7 !important; border: 1px solid #fcd34d !important; }
   [class*="bg-emerald-100"]{ background: #d1fae5 !important; border: 1px solid #6ee7b7 !important; }
   [class*="bg-red-100"]    { background: #fee2e2 !important; border: 1px solid #fca5a5 !important; }
+  [class*="bg-orange-100"] { background: #ffedd5 !important; border: 1px solid #fdba74 !important; }
 
   /* Logo Plan Seniora w nagłówku wydruku */
   .print-logo::before {
