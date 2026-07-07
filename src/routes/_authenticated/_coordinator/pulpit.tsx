@@ -79,6 +79,10 @@ const visitSchema = z.object({
   planned_start: z.string().min(1, "Wymagane"),
   planned_end: z.string().min(1, "Wymagane"),
   notes: z.string().optional(),
+  planned_tasks: z.array(z.object({
+    task_name: z.string(),
+    requires_response: z.boolean().default(false),
+  })).default([]),
 }).refine(d => new Date(d.planned_end) > new Date(d.planned_start), {
   path: ["planned_end"], message: "Koniec musi być po starcie",
 });
@@ -262,6 +266,22 @@ function PulpitPage() {
 
       {/* Kalendarz */}
       <div className="rounded-xl border bg-card shadow-sm">
+        {/* Nagłówek wydruku — widoczny tylko przy druku */}
+        <div className="print-header hidden">
+          <div className="print-logo" />
+          <h1>
+            {filterSenior !== NO_FILTER
+              ? `Grafik wizyt — ${seniors?.find(s => s.id === filterSenior)?.nazwisko} ${seniors?.find(s => s.id === filterSenior)?.imie}`
+              : filterCaregiver !== NO_FILTER
+              ? `Grafik opiekuna — ${caregivers?.find(c => c.id === filterCaregiver)?.nazwisko} ${caregivers?.find(c => c.id === filterCaregiver)?.imie}`
+              : "Grafik wizyt — wszyscy seniorzy"}
+          </h1>
+          <p>
+            Okres: {periodLabel} · Wygenerowano: {new Date().toLocaleDateString("pl-PL", { day: "numeric", month: "long", year: "numeric" })}
+            {filterSenior !== NO_FILTER && " · Typ: grafik dla seniora (opiekunowie)"}
+            {filterCaregiver !== NO_FILTER && " · Typ: grafik dla opiekuna (seniorzy)"}
+          </p>
+        </div>
         {/* Pasek kontrolny kalendarza */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
           <div className="flex items-center gap-2">
@@ -786,6 +806,8 @@ function AddVisitDialog({ seniors, caregivers, defaultDate, open, onClose }: {
   defaultDate: string; open: boolean; onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const [newTask, setNewTask] = useState("");
+
   const form = useForm<VisitForm>({
     resolver: zodResolver(visitSchema),
     defaultValues: {
@@ -793,19 +815,45 @@ function AddVisitDialog({ seniors, caregivers, defaultDate, open, onClose }: {
       planned_start: `${defaultDate}T08:00`,
       planned_end: `${defaultDate}T10:00`,
       notes: "",
+      planned_tasks: [],
     },
   });
 
+  const selectedSeniorId = form.watch("senior_id");
+  const { data: seniorData } = useQuery({
+    queryKey: ["senior-plan", selectedSeniorId],
+    enabled: !!selectedSeniorId,
+    queryFn: async () => {
+      const { data } = await supabase.from("seniors").select("plan_wsparcia").eq("id", selectedSeniorId).single();
+      return data;
+    },
+  });
+
+  const planTasks: string[] = Array.isArray(seniorData?.plan_wsparcia)
+    ? (seniorData!.plan_wsparcia as unknown[]).map(String).filter(Boolean)
+    : [];
+
   const handleSubmit = async (v: VisitForm) => {
-    const { error } = await supabase.from("visits").insert({
+    const { data: visit, error } = await supabase.from("visits").insert({
       senior_id: v.senior_id,
       caregiver_id: v.caregiver_id && v.caregiver_id !== NO_CAREGIVER ? v.caregiver_id : null,
       planned_start: new Date(v.planned_start).toISOString(),
       planned_end: new Date(v.planned_end).toISOString(),
       notes: v.notes || null,
       status: "planned",
-    });
+    }).select("id").single();
     if (error) { toast.error(error.message); return; }
+
+    if (v.planned_tasks.length > 0 && visit?.id) {
+      await supabase.from("visit_tasks").insert(
+        v.planned_tasks.map((t: any) => ({
+          visit_id: visit.id,
+          task_name: t.task_name,
+          requires_response: t.requires_response,
+        }))
+      );
+    }
+
     toast.success("Wizyta zaplanowana");
     qc.invalidateQueries({ queryKey: ["pulpit-visits"] });
     qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
@@ -814,7 +862,7 @@ function AddVisitDialog({ seniors, caregivers, defaultDate, open, onClose }: {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Zaplanuj nową usługę</DialogTitle></DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
@@ -845,6 +893,85 @@ function AddVisitDialog({ seniors, caregivers, defaultDate, open, onClose }: {
                   <FormControl><Input type="datetime-local" {...field} /></FormControl><FormMessage /></FormItem>
               )} />
             </div>
+            <FormField control={form.control} name="planned_tasks" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Planowane czynności</FormLabel>
+                {!selectedSeniorId ? (
+                  <p className="text-xs text-muted-foreground">Wybierz seniora, aby zobaczyć plan wsparcia.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {planTasks.length > 0 && (
+                      <div className="rounded-md border p-3 space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground">Z planu wsparcia:</p>
+                        {planTasks.map((task: string) => {
+                          const existing = field.value.find((t: any) => t.task_name === task);
+                          return (
+                            <div key={task} className="flex items-center gap-2">
+                              <input type="checkbox" checked={!!existing}
+                                onChange={e => {
+                                  if (e.target.checked) field.onChange([...field.value, { task_name: task, requires_response: false }]);
+                                  else field.onChange(field.value.filter((t: any) => t.task_name !== task));
+                                }}
+                                className="h-4 w-4 rounded border-gray-300"
+                              />
+                              <span className="text-sm flex-1">{task}</span>
+                              {existing && (
+                                <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+                                  <input type="checkbox" checked={(existing as any).requires_response}
+                                    onChange={e => field.onChange(field.value.map((t: any) =>
+                                      t.task_name === task ? { ...t, requires_response: e.target.checked } : t
+                                    ))}
+                                    className="h-3 w-3 rounded"
+                                  />
+                                  + pole odpowiedzi
+                                </label>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div className="rounded-md border p-3 space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground">Dodatkowe czynności:</p>
+                      {field.value.filter((t: any) => !planTasks.includes(t.task_name)).map((task: any, idx: number) => (
+                        <div key={idx} className="flex items-center gap-2 text-sm">
+                          <span className="text-primary text-xs">✓</span>
+                          <span className="flex-1">{task.task_name}</span>
+                          <label className="flex items-center gap-1 text-xs text-muted-foreground cursor-pointer">
+                            <input type="checkbox" checked={task.requires_response}
+                              onChange={e => field.onChange(field.value.map((t: any) =>
+                                t.task_name === task.task_name ? { ...t, requires_response: e.target.checked } : t
+                              ))}
+                              className="h-3 w-3 rounded"
+                            />
+                            + pole odpowiedzi
+                          </label>
+                          <button type="button"
+                            onClick={() => field.onChange(field.value.filter((t: any) => t.task_name !== task.task_name))}
+                            className="text-muted-foreground hover:text-destructive text-xs px-1">✕</button>
+                        </div>
+                      ))}
+                      <div className="flex gap-2 mt-1">
+                        <Input value={newTask} onChange={e => setNewTask(e.target.value)}
+                          placeholder="Wpisz czynność i naciśnij Enter..."
+                          className="h-8 text-sm"
+                          onKeyDown={e => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              if (newTask.trim()) { field.onChange([...field.value, { task_name: newTask.trim(), requires_response: false }]); setNewTask(""); }
+                            }
+                          }}
+                        />
+                        <Button type="button" size="sm" variant="outline"
+                          onClick={() => { if (newTask.trim()) { field.onChange([...field.value, { task_name: newTask.trim(), requires_response: false }]); setNewTask(""); } }}>
+                          Dodaj
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </FormItem>
+            )} />
             <FormField control={form.control} name="notes" render={({ field }) => (
               <FormItem><FormLabel>Notatka</FormLabel>
                 <FormControl><Textarea rows={2} placeholder="Uwagi..." {...field} value={field.value ?? ""} /></FormControl>
@@ -860,6 +987,7 @@ function AddVisitDialog({ seniors, caregivers, defaultDate, open, onClose }: {
     </Dialog>
   );
 }
+
 
 // ─── KPI Card ─────────────────────────────────────────────────────────────────
 type KpiTone = "primary"|"info"|"success"|"destructive"|"muted";
