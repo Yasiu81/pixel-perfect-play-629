@@ -22,8 +22,14 @@ import {
   X,
   ChevronLeft,
   ChevronRight as ChevronRightIcon,
+  ChevronDown,
+  ChevronUp,
   Calendar,
+  Printer,
+  Truck,
 } from "lucide-react";
+
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -736,10 +742,11 @@ const eventSchema = z.object({
 type EventForm = z.infer<typeof eventSchema>;
 
 function DayPanel({
-  date, seniorId, visits, cgMap, onClose,
+  date, seniorId, visits, orders, cgMap, onClose,
 }: {
   date: Date; seniorId: string;
   visits: { id: string; planned_start: string; planned_end: string; status: string; hours_billed: number | null; caregiver_id: string | null }[];
+  orders: { id: string; order_type: string; contractor: string | null; scheduled_start: string | null; scheduled_end: string | null; status: string }[];
   cgMap: Record<string, string>; onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -781,7 +788,7 @@ function DayPanel({
         <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-card px-5 py-4">
           <div>
             <div className="font-semibold capitalize">{dayLabel}</div>
-            <div className="text-xs text-muted-foreground">{visits.length} wizyt · {(events ?? []).length} zdarzeń</div>
+            <div className="text-xs text-muted-foreground">{visits.length} wizyt · {orders.length} zleceń dodatkowych · {(events ?? []).length} zdarzeń</div>
           </div>
           <div className="flex items-center gap-2">
             <Button size="sm" onClick={() => setAddOpen(true)}>
@@ -815,6 +822,34 @@ function DayPanel({
                     )}
                     <Badge variant="secondary" className="mt-1 text-xs">
                       {STATUS_LABEL_CAL[v.status] ?? v.status}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {orders.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Zlecenia dodatkowe</h3>
+              <div className="space-y-2">
+                {orders.map((o) => (
+                  <div key={o.id} className="rounded-lg border px-3 py-2.5 bg-violet-500/10 border-violet-300">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 font-medium text-sm">
+                        <Truck className="h-3.5 w-3.5 text-violet-600" />
+                        {o.order_type}
+                      </div>
+                      {(o.scheduled_start || o.scheduled_end) && (
+                        <span className="text-xs">
+                          {o.scheduled_start?.slice(0, 5) ?? "—"}
+                          {o.scheduled_end ? ` – ${o.scheduled_end.slice(0, 5)}` : ""}
+                        </span>
+                      )}
+                    </div>
+                    {o.contractor && <div className="text-xs mt-0.5 opacity-80">{o.contractor}</div>}
+                    <Badge variant="secondary" className="mt-1 text-xs">
+                      {STATUS_LABEL_CAL[o.status] ?? o.status}
                     </Badge>
                   </div>
                 ))}
@@ -952,6 +987,9 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
 
   const startOfMonth = new Date(viewYear, viewMonth, 1).toISOString();
   const endOfMonth = new Date(viewYear, viewMonth + 1, 0, 23, 59, 59).toISOString();
+  const daysInMonthCount = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const monthDateFrom = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-01`;
+  const monthDateTo = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(daysInMonthCount).padStart(2, "0")}`;
 
   const { data: visits, isLoading } = useQuery({
     queryKey: ["senior-calendar", seniorId, viewYear, viewMonth],
@@ -971,14 +1009,30 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
   const { data: monthEvents } = useQuery({
     queryKey: ["senior-events-month", seniorId, viewYear, viewMonth],
     queryFn: async () => {
-      const dateFrom = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-01`;
-      const dateTo = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(new Date(viewYear, viewMonth + 1, 0).getDate()).padStart(2, "0")}`;
       const { data } = await supabase
         .from("senior_events")
         .select("id, date, typ")
         .eq("senior_id", seniorId)
-        .gte("date", dateFrom).lte("date", dateTo);
+        .gte("date", monthDateFrom).lte("date", monthDateTo);
       return data ?? [];
+    },
+  });
+
+  const { data: monthOrders } = useQuery({
+    queryKey: ["senior-additional-orders-month", seniorId, viewYear, viewMonth],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("additional_orders")
+        .select("id, order_type, contractor, scheduled_date, scheduled_start, scheduled_end, status")
+        .eq("senior_id", seniorId)
+        .gte("scheduled_date", monthDateFrom)
+        .lte("scheduled_date", monthDateTo)
+        .order("scheduled_date");
+      if (error) throw error;
+      return (data ?? []) as unknown as {
+        id: string; order_type: string; contractor: string | null;
+        scheduled_date: string; scheduled_start: string | null; scheduled_end: string | null; status: string;
+      }[];
     },
   });
 
@@ -993,13 +1047,20 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
 
   const firstDay = new Date(viewYear, viewMonth, 1).getDay();
   const firstMonday = firstDay === 0 ? 6 : firstDay - 1;
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const daysInMonth = daysInMonthCount;
 
   const visitsByDay: Record<number, typeof visits> = {};
   (visits ?? []).forEach((v) => {
     const d = new Date(v.planned_start).getDate();
     if (!visitsByDay[d]) visitsByDay[d] = [];
     visitsByDay[d]!.push(v);
+  });
+
+  const ordersByDay: Record<number, typeof monthOrders> = {};
+  (monthOrders ?? []).forEach((o) => {
+    const d = Number(o.scheduled_date.slice(8, 10));
+    if (!ordersByDay[d]) ordersByDay[d] = [];
+    ordersByDay[d]!.push(o);
   });
 
   const eventsByDay: Record<number, { typ: string }[]> = {};
@@ -1017,20 +1078,53 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
 
   const totalHours = (visits ?? []).filter(v => v.status === "completed").reduce((s, v) => s + (v.hours_billed ?? 0), 0);
   const selectedDayVisits = selectedDay ? (visitsByDay[selectedDay.getDate()] ?? []) : [];
+  const selectedDayOrders = selectedDay ? (ordersByDay[selectedDay.getDate()] ?? []) : [];
+
+  const fmtTimeShort = (iso: string) =>
+    new Date(iso).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+
+  type MonthRow = {
+    key: string; sortKey: string; dateLabel: string;
+    start: string; end: string; who: string; kind: string; status: string;
+  };
+  const visitRows: MonthRow[] = (visits ?? []).map((v) => ({
+    key: `v-${v.id}`,
+    sortKey: v.planned_start,
+    dateLabel: new Date(v.planned_start).toLocaleDateString("pl-PL"),
+    start: fmtTimeShort(v.planned_start),
+    end: fmtTimeShort(v.planned_end),
+    who: v.caregiver_id ? (cgMap[v.caregiver_id] ?? "—") : "—",
+    kind: "Wizyta standardowa",
+    status: STATUS_LABEL_CAL[v.status] ?? v.status,
+  }));
+  const orderRows: MonthRow[] = (monthOrders ?? []).map((o) => ({
+    key: `o-${o.id}`,
+    sortKey: `${o.scheduled_date}T${o.scheduled_start ?? "00:00"}`,
+    dateLabel: new Date(o.scheduled_date + "T12:00:00").toLocaleDateString("pl-PL"),
+    start: o.scheduled_start ? o.scheduled_start.slice(0, 5) : "—",
+    end: o.scheduled_end ? o.scheduled_end.slice(0, 5) : "—",
+    who: o.contractor || "—",
+    kind: o.order_type,
+    status: STATUS_LABEL_CAL[o.status] ?? o.status,
+  }));
+  const monthRows = [...visitRows, ...orderRows].sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between print:hidden">
         <h2 className="text-lg font-semibold">{MONTHS_PL[viewMonth]} {viewYear}</h2>
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Zrealizowane: <strong>{totalHours} h</strong></span>
           <Button size="sm" variant="outline" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
           <Button size="sm" variant="outline" onClick={() => { setViewYear(today.getFullYear()); setViewMonth(today.getMonth()); }}>Dziś</Button>
           <Button size="sm" variant="outline" onClick={nextMonth}><ChevronRightIcon className="h-4 w-4" /></Button>
+          <Button size="sm" variant="outline" onClick={() => window.print()}>
+            <Printer className="h-4 w-4" /> Drukuj grafik
+          </Button>
         </div>
       </div>
 
-      <div className="rounded-lg border bg-card overflow-hidden">
+      <div className="rounded-lg border bg-card overflow-hidden print:hidden">
         <div className="grid grid-cols-7 border-b">
           {DAYS_PL.map(d => <div key={d} className="py-2 text-center text-xs font-medium text-muted-foreground">{d}</div>)}
         </div>
@@ -1042,6 +1136,7 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
             const day = i + 1;
             const dayVisits = visitsByDay[day] ?? [];
             const dayEvents = eventsByDay[day] ?? [];
+            const dayOrders = ordersByDay[day] ?? [];
             const isToday = day === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
             const col = (firstMonday + i) % 7;
             const isWeekend = col >= 5;
@@ -1063,8 +1158,14 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
                         <div key={v.id} className={`rounded border px-1 py-0.5 text-xs truncate ${STATUS_TONE_CAL[v.status] ?? "bg-muted text-muted-foreground border-border"}`}>
                           {new Date(v.planned_start).toLocaleTimeString("pl-PL", {hour:"2-digit",minute:"2-digit"})}
                           {v.hours_billed ? ` (${v.hours_billed}h)` : ""}
+                          {v.caregiver_id && cgMap[v.caregiver_id] ? ` · ${cgMap[v.caregiver_id].split(" ")[0]}` : ""}
                         </div>
                       ))}
+                      {dayOrders.length > 0 && (
+                        <div className="rounded border border-violet-300 bg-violet-500/10 px-1 py-0.5 text-xs truncate text-violet-700">
+                          {dayOrders.length === 1 ? dayOrders[0].order_type : `${dayOrders.length} zlecenia dod.`}
+                        </div>
+                      )}
                       {dayEvents.length > 0 && (
                         <div className="flex gap-0.5 flex-wrap mt-0.5">
                           {dayEvents.slice(0, 4).map((e, idx) => (
@@ -1082,7 +1183,7 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-3 text-xs">
+      <div className="flex flex-wrap gap-3 text-xs print:hidden">
         {Object.entries(STATUS_LABEL_CAL).map(([k, v]) => (
           <div key={k} className="flex items-center gap-1.5">
             <div className={`h-3 w-3 rounded border ${STATUS_TONE_CAL[k]}`} /><span>{v}</span>
@@ -1096,15 +1197,66 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
           ))}
           <span className="text-muted-foreground">— zdarzenia</span>
         </div>
+        <div className="flex items-center gap-1.5 ml-2 border-l pl-2">
+          <div className="h-3 w-3 rounded border border-violet-300 bg-violet-500/10" />
+          <span>Zlecenie dodatkowe</span>
+        </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">Kliknij dowolny dzień aby zobaczyć szczegóły lub dodać zdarzenie/notatkę.</p>
+      <p className="text-xs text-muted-foreground print:hidden">Kliknij dowolny dzień aby zobaczyć szczegóły lub dodać zdarzenie/notatkę.</p>
+
+      {/* Drukowalna tabela miesiąca — wizyty (opiekun, godz. od/do) + zlecenia dodatkowe */}
+      <div className="hidden print:block mb-4">
+        <h2 className="text-xl font-bold">Grafik wizyt — {seniorName}</h2>
+        <p className="text-sm text-gray-500">{MONTHS_PL[viewMonth]} {viewYear} · Plan Seniora</p>
+      </div>
+      <div className="rounded-lg border bg-card overflow-hidden">
+        <div className="border-b px-4 py-3 text-sm font-medium print:hidden">
+          Tabela miesiąca — {MONTHS_PL[viewMonth]} {viewYear}
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Data</TableHead>
+              <TableHead>Godz. od</TableHead>
+              <TableHead>Godz. do</TableHead>
+              <TableHead>Opiekun / Wykonawca</TableHead>
+              <TableHead>Rodzaj</TableHead>
+              <TableHead>Status</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {monthRows.length > 0 ? (
+              monthRows.map((r) => (
+                <TableRow key={r.key}>
+                  <TableCell className="text-sm">{r.dateLabel}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{r.start}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{r.end}</TableCell>
+                  <TableCell className="text-sm">{r.who}</TableCell>
+                  <TableCell className="text-sm">
+                    {r.kind !== "Wizyta standardowa" && <Truck className="mr-1 inline h-3.5 w-3.5 text-violet-600" />}
+                    {r.kind}
+                  </TableCell>
+                  <TableCell><Badge variant="secondary" className="text-xs">{r.status}</Badge></TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
+                  Brak wizyt i zleceń w tym miesiącu.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
 
       {selectedDay && (
         <DayPanel
           date={selectedDay}
           seniorId={seniorId}
           visits={selectedDayVisits as any}
+          orders={selectedDayOrders as any}
           cgMap={cgMap}
           onClose={() => setSelectedDay(null)}
         />
@@ -1223,8 +1375,38 @@ function RaportyWizytTab({ visits }: { visits: VisitWithTasks[] }) {
 
 // ─── ZAKŁADKA: DOKUMENTY ─────────────────────────────────────────────────────
 
+const DOC_CATEGORIES = [
+  "decyzja_mops",
+  "umowa",
+  "rodo",
+  "medyczne",
+  "faktura",
+  "inne",
+] as const;
+type DocCategory = (typeof DOC_CATEGORIES)[number];
+
+const DOC_CATEGORY_LABEL: Record<DocCategory, string> = {
+  decyzja_mops: "Decyzje MOPS",
+  umowa: "Umowy",
+  rodo: "Zgody RODO",
+  medyczne: "Dokumentacja medyczna",
+  faktura: "Faktury",
+  inne: "Inne",
+};
+
+type SeniorDocument = {
+  id: string;
+  name: string;
+  file_path: string;
+  file_type: string | null;
+  kategoria: DocCategory;
+  created_at: string;
+};
+
 function DokumentyTab({ seniorId }: { seniorId: string }) {
   const [uploading, setUploading] = useState(false);
+  const [uploadCategory, setUploadCategory] = useState<DocCategory>("inne");
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
   const qc = useQueryClient();
 
   const { data: docs, isLoading } = useQuery({
@@ -1232,11 +1414,11 @@ function DokumentyTab({ seniorId }: { seniorId: string }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("senior_documents")
-        .select("id, name, file_path, file_type, created_at")
+        .select("id, name, file_path, file_type, kategoria, created_at")
         .eq("senior_id", seniorId)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []) as unknown as SeniorDocument[];
     },
   });
 
@@ -1255,10 +1437,12 @@ function DokumentyTab({ seniorId }: { seniorId: string }) {
         name: file.name,
         file_path: path,
         file_type: file.type,
-      });
+        kategoria: uploadCategory,
+      } as never);
       if (dbErr) throw dbErr;
       toast.success("Dokument wgrany");
       qc.invalidateQueries({ queryKey: ["senior-documents", seniorId] });
+      setOpenCategories((prev) => ({ ...prev, [uploadCategory]: true }));
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -1285,50 +1469,93 @@ function DokumentyTab({ seniorId }: { seniorId: string }) {
     qc.invalidateQueries({ queryKey: ["senior-documents", seniorId] });
   };
 
+  const docsByCategory: Record<DocCategory, SeniorDocument[]> = {
+    decyzja_mops: [], umowa: [], rodo: [], medyczne: [], faktura: [], inne: [],
+  };
+  (docs ?? []).forEach((d) => {
+    const cat = DOC_CATEGORIES.includes(d.kategoria) ? d.kategoria : "inne";
+    docsByCategory[cat].push(d);
+  });
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          Decyzje MOPS, umowy, zgody RODO, dokumentacja medyczna.
+          Decyzje MOPS, umowy, zgody RODO, dokumentacja medyczna, faktury — pogrupowane wg kategorii.
         </p>
-        <label className={`cursor-pointer inline-flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm font-medium shadow-sm hover:bg-muted transition-colors ${uploading ? "opacity-50 cursor-not-allowed" : ""}`}>
-          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          Wgraj dokument
-          <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
-        </label>
+        <div className="flex items-center gap-2">
+          <Select value={uploadCategory} onValueChange={(v) => setUploadCategory(v as DocCategory)}>
+            <SelectTrigger className="h-9 w-[190px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DOC_CATEGORIES.map((c) => (
+                <SelectItem key={c} value={c}>{DOC_CATEGORY_LABEL[c]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <label className={`cursor-pointer inline-flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm font-medium shadow-sm hover:bg-muted transition-colors ${uploading ? "opacity-50 cursor-not-allowed" : ""}`}>
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            Wgraj dokument
+            <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" />
+          </label>
+        </div>
       </div>
 
       {isLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : !docs || docs.length === 0 ? (
         <div className="rounded-lg border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
-          Brak dokumentów. Wgraj pierwszy klikając przycisk powyżej.
+          Brak dokumentów. Wybierz kategorię i wgraj pierwszy dokument.
         </div>
       ) : (
-        <div className="rounded-lg border bg-card divide-y">
-          {docs.map((doc) => (
-            <div key={doc.id} className="flex items-center justify-between px-4 py-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <FileText className="h-5 w-5" />
+        <div className="space-y-3">
+          {DOC_CATEGORIES.map((cat) => {
+            const items = docsByCategory[cat];
+            if (items.length === 0) return null;
+            const isOpen = openCategories[cat] ?? true;
+            return (
+              <Collapsible
+                key={cat}
+                open={isOpen}
+                onOpenChange={(v) => setOpenCategories((prev) => ({ ...prev, [cat]: v }))}
+              >
+                <div className="rounded-lg border bg-card overflow-hidden">
+                  <CollapsibleTrigger className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 transition-colors">
+                    <span>{DOC_CATEGORY_LABEL[cat]} <span className="text-muted-foreground font-normal">({items.length})</span></span>
+                    {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="divide-y border-t">
+                      {items.map((doc) => (
+                        <div key={doc.id} className="flex items-center justify-between px-4 py-3">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                              <FileText className="h-5 w-5" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-medium">{doc.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {new Date(doc.created_at).toLocaleDateString("pl-PL")}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <Button size="sm" variant="outline" onClick={() => handleDownload(doc.file_path, doc.name)}>
+                              Pobierz
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => handleDelete(doc.id, doc.file_path)} className="text-destructive hover:text-destructive">
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CollapsibleContent>
                 </div>
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">{doc.name}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {new Date(doc.created_at).toLocaleDateString("pl-PL")}
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <Button size="sm" variant="outline" onClick={() => handleDownload(doc.file_path, doc.name)}>
-                  Pobierz
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => handleDelete(doc.id, doc.file_path)} className="text-destructive hover:text-destructive">
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          ))}
+              </Collapsible>
+            );
+          })}
         </div>
       )}
     </div>
