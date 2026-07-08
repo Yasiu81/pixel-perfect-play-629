@@ -1,11 +1,32 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Plus, Loader2, X, CalendarClock, User, Clock, StickyNote, CheckSquare } from "lucide-react";
+import {
+  Plus,
+  Loader2,
+  X,
+  CalendarClock,
+  User,
+  Clock,
+  StickyNote,
+  CheckSquare,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Printer,
+  RefreshCw,
+  Truck,
+} from "lucide-react";
+import { format, addDays, startOfDay, endOfDay } from "date-fns";
+import { pl } from "date-fns/locale";
+
+import { VisitsMap, type MapPin, type MapPinCategory, PIN_CATEGORY_COLOR } from "@/components/VisitsMap";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -78,6 +99,33 @@ const visitSchema = z
 
 type VisitForm = z.infer<typeof visitSchema>;
 
+// ─── Zlecenia dodatkowe (poza standardowymi wizytami opiekunek) ─────────────
+
+const orderSchema = z.object({
+  senior_id: z.string().uuid("Wybierz seniora"),
+  order_type: z.string().trim().min(1, "Wymagane"),
+  contractor: z.string().trim().optional().or(z.literal("")),
+  scheduled_start: z.string().optional().or(z.literal("")),
+  scheduled_end: z.string().optional().or(z.literal("")),
+  notes: z.string().trim().max(500).optional().or(z.literal("")),
+});
+
+type OrderForm = z.infer<typeof orderSchema>;
+
+const ORDER_TYPE_PRESETS = ["Transport medyczny", "Usługa złotej rączki", "Inne"];
+
+type OrderRow = {
+  id: string;
+  order_type: string;
+  contractor: string | null;
+  scheduled_date: string;
+  scheduled_start: string | null;
+  scheduled_end: string | null;
+  status: string;
+  notes: string | null;
+  senior: { imie: string; nazwisko: string; lat: number | null; lng: number | null } | null;
+};
+
 const STATUS_TONE: Record<string, string> = {
   planned: "bg-muted text-muted-foreground",
   active: "bg-sky-500/15 text-sky-700 dark:text-sky-400",
@@ -123,7 +171,7 @@ type VisitRow = {
   hours_billed: number | null;
   caregiver_id: string | null;
   notes: string | null;
-  senior: { imie: string; nazwisko: string } | null;
+  senior: { imie: string; nazwisko: string; lat: number | null; lng: number | null } | null;
   tasks: { id: string; task_name: string; completed: boolean }[];
 };
 
@@ -474,24 +522,48 @@ function WizytyPage() {
     },
   });
 
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const dayStartISO = useMemo(() => startOfDay(selectedDate).toISOString(), [selectedDate]);
+  const dayEndISO = useMemo(() => endOfDay(selectedDate).toISOString(), [selectedDate]);
+  const dateKey = format(selectedDate, "yyyy-MM-dd");
+
   const visitsQ = useQuery({
-    queryKey: ["visits-list", filter],
-    refetchInterval: 30_000,
+    queryKey: ["visits-list", filter, dateKey],
+    refetchInterval: false,
     queryFn: async () => {
       let q = supabase
         .from("visits")
         .select(
           `id, planned_start, planned_end, actual_start, actual_end,
            status, hours_billed, caregiver_id, notes,
-           senior:seniors(imie, nazwisko),
+           senior:seniors(imie, nazwisko, lat, lng),
            tasks:visit_tasks(id, task_name, completed)`,
         )
-        .order("planned_start", { ascending: false })
-        .limit(100);
+        .gte("planned_start", dayStartISO)
+        .lte("planned_start", dayEndISO)
+        .order("planned_start", { ascending: true })
+        .limit(200);
       if (filter === "alert") q = q.eq("status", "alert");
       const { data, error } = await q;
       if (error) throw error;
       return (data ?? []) as unknown as VisitRow[];
+    },
+  });
+
+  const ordersQ = useQuery({
+    queryKey: ["additional-orders-list", dateKey],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("additional_orders")
+        .select(
+          `id, order_type, contractor, scheduled_date, scheduled_start, scheduled_end,
+           status, notes,
+           senior:seniors(imie, nazwisko, lat, lng)`,
+        )
+        .eq("scheduled_date", dateKey)
+        .order("scheduled_start", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as unknown as OrderRow[];
     },
   });
 
@@ -552,6 +624,113 @@ function WizytyPage() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // ─── Zlecenia dodatkowe: formularz i mutacja ─────────────────────────────
+  const [orderDialogOpen, setOrderDialogOpen] = useState(false);
+  const orderForm = useForm<OrderForm>({
+    resolver: zodResolver(orderSchema),
+    defaultValues: {
+      senior_id: "",
+      order_type: "",
+      contractor: "",
+      scheduled_start: "",
+      scheduled_end: "",
+      notes: "",
+    },
+  });
+
+  const createOrderMut = useMutation({
+    mutationFn: async (v: OrderForm) => {
+      const { error } = await supabase.from("additional_orders").insert({
+        senior_id: v.senior_id,
+        order_type: v.order_type,
+        contractor: v.contractor || null,
+        scheduled_date: dateKey,
+        scheduled_start: v.scheduled_start || null,
+        scheduled_end: v.scheduled_end || null,
+        notes: v.notes || null,
+        status: "planned",
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Zlecenie dodatkowe dodane");
+      queryClient.invalidateQueries({ queryKey: ["additional-orders-list"] });
+      orderForm.reset();
+      setOrderDialogOpen(false);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // ─── Widok dnia: filtry, sekcje, mapa ────────────────────────────────────
+  const [seniorFilter, setSeniorFilter] = useState<string>("__all__");
+  const [caregiverFilter, setCaregiverFilter] = useState<string>("__all__");
+  const [archiveOpen, setArchiveOpen] = useState(true);
+  const [ordersOpen, setOrdersOpen] = useState(true);
+  const [highlightCategory, setHighlightCategory] = useState<MapPinCategory | null>(null);
+
+  const visitsForDay = visitsQ.data ?? [];
+  const ordersForDay = ordersQ.data ?? [];
+
+  // Filtrowanie po senior/opiekun wybranych w selektorach nad tabelą
+  const visitsFilteredBySelectors = visitsForDay.filter((v) => {
+    const matchesCaregiver = caregiverFilter === "__all__" || v.caregiver_id === caregiverFilter;
+    const seniorLabel = v.senior ? `${v.senior.nazwisko} ${v.senior.imie}` : null;
+    const matchesSenior = seniorFilter === "__all__" || seniorLabel === seniorFilter;
+    return matchesCaregiver && matchesSenior;
+  });
+
+  const currentVisits = visitsFilteredBySelectors.filter((v) => v.status !== "completed");
+  const archiveVisits = visitsFilteredBySelectors.filter((v) => v.status === "completed");
+  const activeCount = currentVisits.filter((v) => v.status === "active").length;
+  const plannedCount = currentVisits.filter((v) => v.status === "planned").length;
+  const completedCount = archiveVisits.length;
+  const ordersCount = ordersForDay.length;
+
+  const mapPins: MapPin[] = useMemo(() => {
+    const pins: MapPin[] = [];
+    for (const v of currentVisits) {
+      if (!v.senior?.lat || !v.senior?.lng) continue;
+      pins.push({
+        id: `visit-${v.id}`,
+        lat: v.senior.lat,
+        lng: v.senior.lng,
+        label: `${v.senior.nazwisko} ${v.senior.imie} — ${formatTime(v.planned_start)} (${STATUS_LABEL[v.status] ?? v.status})`,
+        category: v.status === "active" ? "active" : "planned",
+      });
+    }
+    for (const v of archiveVisits) {
+      if (!v.senior?.lat || !v.senior?.lng) continue;
+      pins.push({
+        id: `visit-${v.id}`,
+        lat: v.senior.lat,
+        lng: v.senior.lng,
+        label: `${v.senior.nazwisko} ${v.senior.imie} — ${formatTime(v.planned_start)} (zakończona)`,
+        category: "completed",
+      });
+    }
+    for (const o of ordersForDay) {
+      if (!o.senior?.lat || !o.senior?.lng) continue;
+      pins.push({
+        id: `order-${o.id}`,
+        lat: o.senior.lat,
+        lng: o.senior.lng,
+        label: `${o.senior.nazwisko} ${o.senior.imie} — ${o.order_type}`,
+        category: "additional",
+      });
+    }
+    return pins;
+  }, [currentVisits, archiveVisits, ordersForDay]);
+
+  const isRefreshing = visitsQ.isFetching || ordersQ.isFetching;
+  const refreshAll = () => {
+    visitsQ.refetch();
+    ordersQ.refetch();
+  };
+
+  const toggleHighlight = (cat: MapPinCategory) => {
+    setHighlightCategory((prev) => (prev === cat ? null : cat));
+  };
+
   const caregiverName = (id: string | null) => {
     if (!id) return <span className="text-muted-foreground">—</span>;
     const c = caregiversQ.data?.find((x) => x.id === id);
@@ -560,21 +739,65 @@ function WizytyPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Monitor wizyt</h1>
-          <p className="text-sm text-muted-foreground">
-            Lista zaplanowanych wizyt{filter === "alert" ? " — filtr: alarmy" : ""}.{" "}
-            <span className="text-xs">Kliknij w wiersz aby zobaczyć szczegóły.</span>
-          </p>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Monitor Wizyt</h1>
+        <p className="text-sm text-muted-foreground">
+          Przegląd działalności firmy w czasie rzeczywistym.
+        </p>
+      </div>
+
+      {/* Pasek dnia: nawigacja, filtry, druk, dodawanie */}
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3">
+        <div className="font-medium">
+          Aktualne i zaplanowane wizyty na dzień {format(selectedDate, "dd.MM.yyyy", { locale: pl })}r.
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus />
-              Dodaj wizytę
-            </Button>
-          </DialogTrigger>
+        <div className="flex items-center gap-1">
+          <Button variant="outline" size="icon" onClick={() => setSelectedDate((d) => addDays(d, -1))}>
+            <ChevronLeft />
+          </Button>
+          <Button variant="outline" size="icon" onClick={() => setSelectedDate((d) => addDays(d, 1))}>
+            <ChevronRight />
+          </Button>
+        </div>
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Select value={seniorFilter} onValueChange={setSeniorFilter}>
+            <SelectTrigger className="h-9 w-[170px]">
+              <SelectValue placeholder="Wybierz Seniora" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">Wszyscy seniorzy</SelectItem>
+              {seniorsQ.data?.map((s) => (
+                <SelectItem key={s.id} value={`${s.nazwisko} ${s.imie}`}>
+                  {s.nazwisko} {s.imie}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={caregiverFilter} onValueChange={setCaregiverFilter}>
+            <SelectTrigger className="h-9 w-[170px]">
+              <SelectValue placeholder="Wybierz Opiekuna" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__all__">Wszyscy opiekunowie</SelectItem>
+              {caregiversQ.data?.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.nazwisko} {c.imie}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={() => window.print()}>
+            <Printer />
+            Drukuj grafik (PDF)
+          </Button>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus />
+                Zaplanuj nową usługę
+              </Button>
+            </DialogTrigger>
           <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Nowa wizyta</DialogTitle>
@@ -805,19 +1028,21 @@ function WizytyPage() {
               </form>
             </Form>
           </DialogContent>
-        </Dialog>
+          </Dialog>
+        </div>
       </div>
 
-      {/* Tabela wizyt */}
+      {/* Tabela: Aktualne i zaplanowane wizyty */}
       <div className="rounded-lg border bg-card">
+        <div className="border-b px-4 py-3 text-sm font-medium">Aktualne i zaplanowane wizyty</div>
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Senior</TableHead>
-              <TableHead>Termin</TableHead>
-              <TableHead>Opiekun</TableHead>
-              <TableHead>Godz.</TableHead>
+              <TableHead>Godzina</TableHead>
+              <TableHead>Opiekunka</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Kwota rozliczenia</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -829,11 +1054,11 @@ function WizytyPage() {
                   </TableCell>
                 </TableRow>
               ))
-            ) : visitsQ.data && visitsQ.data.length > 0 ? (
-              visitsQ.data.map((v) => {
+            ) : currentVisits.length > 0 ? (
+              currentVisits.map((v) => {
                 const senior = v.senior;
                 const tasks = v.tasks ?? [];
-                const completedCount = tasks.filter((t) => t.completed).length;
+                const doneCount = tasks.filter((t) => t.completed).length;
                 return (
                   <TableRow
                     key={v.id}
@@ -842,38 +1067,21 @@ function WizytyPage() {
                   >
                     <TableCell className="font-medium">
                       <div>{senior ? `${senior.nazwisko} ${senior.imie}` : "—"}</div>
-                      {/* Tooltip z czynnościami */}
-                      {tasks.length > 0 && (
-                        <div className="mt-0.5 flex flex-wrap gap-1">
-                          {tasks.slice(0, 3).map((t) => (
-                            <span
-                              key={t.id}
-                              className={`inline-block rounded px-1.5 py-0.5 text-xs ${
-                                t.completed
-                                  ? "bg-emerald-500/15 text-emerald-700 line-through"
-                                  : "bg-muted text-muted-foreground"
-                              }`}
-                            >
-                              {t.task_name}
-                            </span>
-                          ))}
-                          {tasks.length > 3 && (
-                            <span className="text-xs text-muted-foreground">
-                              +{tasks.length - 3} więcej
-                            </span>
-                          )}
-                        </div>
-                      )}
                       {tasks.length > 0 && (
                         <div className="mt-0.5 text-xs text-muted-foreground">
-                          {completedCount}/{tasks.length} czynności
+                          {doneCount}/{tasks.length} czynności
                         </div>
                       )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {formatDateTime(v.planned_start)} → {formatTime(v.planned_end)}
+                      {formatTime(v.planned_start)}
                     </TableCell>
                     <TableCell>{caregiverName(v.caregiver_id)}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className={STATUS_TONE[v.status] ?? ""}>
+                        {STATUS_LABEL[v.status] ?? v.status}
+                      </Badge>
+                    </TableCell>
                     <TableCell>
                       {v.hours_billed && v.hours_billed > 0 ? (
                         `${v.hours_billed}h`
@@ -881,23 +1089,345 @@ function WizytyPage() {
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className={STATUS_TONE[v.status] ?? ""}>
-                        {STATUS_LABEL[v.status] ?? v.status}
-                      </Badge>
-                    </TableCell>
                   </TableRow>
                 );
               })
             ) : (
               <TableRow>
                 <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
-                  Brak wizyt. Kliknij „Dodaj wizytę", aby zaplanować pierwszą.
+                  Brak wizyt na ten dzień. Kliknij „Zaplanuj nową usługę", aby dodać pierwszą.
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Zrealizowane wizyty (archiwum dnia) */}
+      <Collapsible open={archiveOpen} onOpenChange={setArchiveOpen}>
+        <div className="rounded-lg border bg-card">
+          <CollapsibleTrigger className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium">
+            Zrealizowane Wizyty (Archiwum)
+            {archiveOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Senior</TableHead>
+                  <TableHead>Data wizyty</TableHead>
+                  <TableHead>Godzina</TableHead>
+                  <TableHead>Opiekunka</TableHead>
+                  <TableHead>Kwota rozliczenia</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {archiveVisits.length > 0 ? (
+                  archiveVisits.map((v) => (
+                    <TableRow
+                      key={v.id}
+                      className="cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => setSelectedVisit(v)}
+                    >
+                      <TableCell className="font-medium">
+                        {v.senior ? `${v.senior.nazwisko} ${v.senior.imie}` : "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {format(new Date(v.planned_start), "dd.MM.yyyy")}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {formatTime(v.planned_start)}
+                      </TableCell>
+                      <TableCell>{caregiverName(v.caregiver_id)}</TableCell>
+                      <TableCell>
+                        {v.hours_billed && v.hours_billed > 0 ? `${v.hours_billed}h` : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
+                      Brak zrealizowanych wizyt tego dnia.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CollapsibleContent>
+        </div>
+      </Collapsible>
+
+      {/* Zlecenia dodatkowe */}
+      <Collapsible open={ordersOpen} onOpenChange={setOrdersOpen}>
+        <div className="rounded-lg border bg-card">
+          <div className="flex items-center justify-between px-4 py-3">
+            <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium">
+              Zlecenia dodatkowe
+              {ordersOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </CollapsibleTrigger>
+            <Dialog open={orderDialogOpen} onOpenChange={setOrderDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <Plus />
+                  Dodaj zlecenie
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Nowe zlecenie dodatkowe</DialogTitle>
+                  <DialogDescription>
+                    Usługa wykraczająca poza standardową wizytę opiekunki (np. transport, drobna naprawa),
+                    na dzień {format(selectedDate, "dd.MM.yyyy")}.
+                  </DialogDescription>
+                </DialogHeader>
+                <Form {...orderForm}>
+                  <form
+                    onSubmit={orderForm.handleSubmit((v) => createOrderMut.mutate(v))}
+                    className="space-y-4"
+                  >
+                    <FormField
+                      control={orderForm.control}
+                      name="senior_id"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Senior *</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Wybierz seniora" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {seniorsQ.data?.map((s) => (
+                                <SelectItem key={s.id} value={s.id}>
+                                  {s.nazwisko} {s.imie}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={orderForm.control}
+                      name="order_type"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Typ zlecenia *</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Wybierz typ" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {ORDER_TYPE_PRESETS.map((t) => (
+                                <SelectItem key={t} value={t}>
+                                  {t}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={orderForm.control}
+                      name="contractor"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Wykonawca</FormLabel>
+                          <FormControl>
+                            <Input placeholder="np. Firma transportowa Kowalscy" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={orderForm.control}
+                        name="scheduled_start"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Godzina od</FormLabel>
+                            <FormControl>
+                              <Input type="time" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={orderForm.control}
+                        name="scheduled_end"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Godzina do</FormLabel>
+                            <FormControl>
+                              <Input type="time" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <FormField
+                      control={orderForm.control}
+                      name="notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Notatka</FormLabel>
+                          <FormControl>
+                            <Textarea rows={3} {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <DialogFooter>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setOrderDialogOpen(false)}
+                        disabled={createOrderMut.isPending}
+                      >
+                        Anuluj
+                      </Button>
+                      <Button type="submit" disabled={createOrderMut.isPending}>
+                        {createOrderMut.isPending && <Loader2 className="animate-spin" />}
+                        Dodaj
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </Form>
+              </DialogContent>
+            </Dialog>
+          </div>
+          <CollapsibleContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Senior</TableHead>
+                  <TableHead>Typ zlecenia</TableHead>
+                  <TableHead>Godzina</TableHead>
+                  <TableHead>Wykonawca</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {ordersForDay.length > 0 ? (
+                  ordersForDay.map((o) => (
+                    <TableRow key={o.id}>
+                      <TableCell className="font-medium">
+                        {o.senior ? `${o.senior.nazwisko} ${o.senior.imie}` : "—"}
+                      </TableCell>
+                      <TableCell className="flex items-center gap-2 text-sm">
+                        <Truck className="h-4 w-4 text-violet-600" />
+                        {o.order_type}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {o.scheduled_start ? o.scheduled_start.slice(0, 5) : "—"}
+                        {o.scheduled_end ? ` – ${o.scheduled_end.slice(0, 5)}` : ""}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {o.contractor || "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className={STATUS_TONE[o.status] ?? ""}>
+                          {STATUS_LABEL[o.status] ?? o.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
+                      Brak zleceń dodatkowych tego dnia.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CollapsibleContent>
+        </div>
+      </Collapsible>
+
+      {/* Mapa + Szybkie filtry dnia */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="h-[420px] lg:col-span-2">
+          <VisitsMap pins={mapPins} highlight={highlightCategory} />
+        </div>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Szybkie Filtry Dnia</h2>
+            <Button size="sm" variant="outline" onClick={refreshAll} disabled={isRefreshing}>
+              <RefreshCw className={isRefreshing ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+              Odśwież podgląd
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => toggleHighlight("active")}
+              className={`rounded-lg border bg-card p-3 text-left transition-shadow ${
+                highlightCategory === "active" ? "ring-2 ring-offset-1" : ""
+              }`}
+              style={{ ringColor: PIN_CATEGORY_COLOR.active } as React.CSSProperties}
+            >
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                W trakcie realizacji
+              </div>
+              <div className="text-2xl font-bold" style={{ color: PIN_CATEGORY_COLOR.active }}>
+                {activeCount}
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleHighlight("additional")}
+              className={`rounded-lg border bg-card p-3 text-left transition-shadow ${
+                highlightCategory === "additional" ? "ring-2 ring-offset-1" : ""
+              }`}
+            >
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Zlecenia dodatkowe
+              </div>
+              <div className="text-2xl font-bold" style={{ color: PIN_CATEGORY_COLOR.additional }}>
+                {ordersCount}
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleHighlight("planned")}
+              className={`rounded-lg border bg-card p-3 text-left transition-shadow ${
+                highlightCategory === "planned" ? "ring-2 ring-offset-1" : ""
+              }`}
+            >
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Zaplanowane
+              </div>
+              <div className="text-2xl font-bold" style={{ color: PIN_CATEGORY_COLOR.planned }}>
+                {plannedCount}
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => toggleHighlight("completed")}
+              className={`rounded-lg border bg-card p-3 text-left transition-shadow ${
+                highlightCategory === "completed" ? "ring-2 ring-offset-1" : ""
+              }`}
+            >
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Zakończone dzisiaj
+              </div>
+              <div className="text-2xl font-bold" style={{ color: PIN_CATEGORY_COLOR.completed }}>
+                {completedCount}
+              </div>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Panel szczegółów wizyty */}
