@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { CoordinatorSidebar } from "@/components/CoordinatorSidebar";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
 
@@ -38,6 +39,9 @@ function CoordinatorLayout() {
           <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b bg-card/80 px-4 backdrop-blur">
             <SidebarTrigger />
             <div className="text-sm font-medium text-muted-foreground">Panel koordynatora</div>
+            <div className="ml-auto">
+              <NotificationBell />
+            </div>
           </header>
           <main className="flex-1 p-6">
             <Outlet />

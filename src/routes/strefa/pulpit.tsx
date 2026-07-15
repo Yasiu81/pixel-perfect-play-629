@@ -1,13 +1,22 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo, useEffect } from "react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  LogOut, Phone, MapPin, FileText,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
+  LogOut, Phone, MapPin, FileText, Loader2, MessageSquarePlus,
   CheckCircle2, ChevronLeft, ChevronRight,
 } from "lucide-react";
 
@@ -72,9 +81,12 @@ function StrefaPulpit() {
     queryFn: async () => {
       const { data } = await supabase
         .from("family_access")
-        .select("senior_id, relacja")
+        .select("senior_id, relacja, dostep_finansowy, dostep_opiekunczy")
         .eq("user_id", userId!);
-      return data ?? [];
+      return (data ?? []) as unknown as {
+        senior_id: string; relacja: string | null;
+        dostep_finansowy: boolean; dostep_opiekunczy: boolean;
+      }[];
     },
   });
 
@@ -95,6 +107,9 @@ function StrefaPulpit() {
   const [selectedSeniorId, setSelectedSeniorId] = useState<string | null>(null);
   const senior = seniors?.find((s) => s.id === selectedSeniorId) ?? seniors?.[0] ?? null;
   const relacja = access?.find((a) => a.senior_id === senior?.id)?.relacja;
+  const myAccess = access?.find((a) => a.senior_id === senior?.id);
+  const dostepFinansowy = myAccess?.dostep_finansowy ?? true;
+  const dostepOpiekunczy = myAccess?.dostep_opiekunczy ?? true;
 
   const { data: visits } = useQuery({
     queryKey: ["family-visits", senior?.id],
@@ -213,11 +228,13 @@ function StrefaPulpit() {
                 </a>
               )}
             </div>
-            <Badge className="bg-white/20 text-white border-0 text-xs flex-shrink-0">
-              {FIN_LABEL[senior.typ_finansowania ?? ""] ?? "—"}
-            </Badge>
+            {dostepFinansowy && (
+              <Badge className="bg-white/20 text-white border-0 text-xs flex-shrink-0">
+                {FIN_LABEL[senior.typ_finansowania ?? ""] ?? "—"}
+              </Badge>
+            )}
           </div>
-          <div className="mt-4 grid grid-cols-3 gap-3">
+          <div className={`mt-4 grid gap-3 ${dostepFinansowy ? "grid-cols-3" : "grid-cols-2"}`}>
             <div className="rounded-xl bg-white/15 px-3 py-2 text-center">
               <div className="text-xl font-bold">{thisMonthStats.completed}</div>
               <div className="text-xs text-white/70">wizyt w mies.</div>
@@ -226,12 +243,17 @@ function StrefaPulpit() {
               <div className="text-xl font-bold">{thisMonthStats.hours}h</div>
               <div className="text-xs text-white/70">godzin opieki</div>
             </div>
-            <div className="rounded-xl bg-white/15 px-3 py-2 text-center">
-              <div className="text-xl font-bold">{senior.godziny_max ?? "—"}</div>
-              <div className="text-xs text-white/70">limit godz./mies.</div>
-            </div>
+            {dostepFinansowy && (
+              <div className="rounded-xl bg-white/15 px-3 py-2 text-center">
+                <div className="text-xl font-bold">{senior.godziny_max ?? "—"}</div>
+                <div className="text-xs text-white/70">limit godz./mies.</div>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Zgłoś zapotrzebowanie / zmianę terminu */}
+        <RequestServiceButton seniorId={senior.id} userId={userId!} />
 
         {/* Najbliższa wizyta */}
         {nextVisit && (
@@ -257,23 +279,35 @@ function StrefaPulpit() {
         )}
 
         {/* Zakładki */}
-        <Tabs defaultValue="wizyty">
+        <Tabs defaultValue={dostepOpiekunczy ? "wizyty" : "dokumenty"}>
           <TabsList className="w-full">
-            <TabsTrigger value="wizyty" className="flex-1">📅 Wizyty</TabsTrigger>
-            <TabsTrigger value="raporty" className="flex-1">📝 Raporty</TabsTrigger>
-            <TabsTrigger value="dokumenty" className="flex-1">📁 Dokumenty</TabsTrigger>
+            {dostepOpiekunczy && <TabsTrigger value="wizyty" className="flex-1">📅 Wizyty</TabsTrigger>}
+            {dostepOpiekunczy && <TabsTrigger value="raporty" className="flex-1">📝 Raporty</TabsTrigger>}
+            {dostepFinansowy && <TabsTrigger value="dokumenty" className="flex-1">📁 Dokumenty</TabsTrigger>}
           </TabsList>
 
-          <TabsContent value="wizyty" className="mt-4">
-            <FamilyKalendarz visits={visits ?? []} cgMap={cgMap} />
-          </TabsContent>
-          <TabsContent value="raporty" className="mt-4">
-            <FamilyRaporty visits={(visits ?? []).filter((v: any) => v.status === "completed")} cgMap={cgMap} />
-          </TabsContent>
-          <TabsContent value="dokumenty" className="mt-4">
-            <FamilyDokumenty seniorId={senior.id} />
-          </TabsContent>
+          {dostepOpiekunczy && (
+            <TabsContent value="wizyty" className="mt-4">
+              <FamilyKalendarz visits={visits ?? []} cgMap={cgMap} />
+            </TabsContent>
+          )}
+          {dostepOpiekunczy && (
+            <TabsContent value="raporty" className="mt-4">
+              <FamilyRaporty visits={(visits ?? []).filter((v: any) => v.status === "completed")} cgMap={cgMap} />
+            </TabsContent>
+          )}
+          {dostepFinansowy && (
+            <TabsContent value="dokumenty" className="mt-4">
+              <FamilyDokumenty seniorId={senior.id} userId={userId!} />
+            </TabsContent>
+          )}
         </Tabs>
+
+        {!dostepOpiekunczy && !dostepFinansowy && (
+          <div className="rounded-2xl border border-dashed bg-white p-8 text-center text-sm text-gray-400">
+            Twoje konto nie ma jeszcze przydzielonych uprawnień do przeglądania danych. Skontaktuj się z koordynatorem.
+          </div>
+        )}
       </main>
     </div>
   );
@@ -425,7 +459,7 @@ function FamilyRaporty({ visits, cgMap }: { visits: any[]; cgMap: Record<string,
   );
 }
 
-function FamilyDokumenty({ seniorId }: { seniorId: string }) {
+function FamilyDokumenty({ seniorId, userId }: { seniorId: string; userId: string }) {
   const { data: docs, isLoading } = useQuery({
     queryKey: ["family-documents", seniorId],
     queryFn: async () => {
@@ -446,6 +480,16 @@ function FamilyDokumenty({ seniorId }: { seniorId: string }) {
       a.download = name;
       a.click();
     }
+    // Log dostępu (RODO / kontrola MOPS) — widoczny koordynatorowi w zakładce Rodzina
+    supabase.from("audit_log").insert({
+      user_id: userId,
+      table_name: "senior_documents",
+      record_id: null,
+      operation: "READ_DOCUMENT",
+      details: { senior_id: seniorId, name },
+    } as never).then(({ error }) => {
+      if (error) console.error("Nie udało się zapisać logu dostępu:", error);
+    });
   };
 
   if (isLoading) return <Skeleton className="h-24 w-full rounded-2xl" />;
@@ -470,5 +514,85 @@ function FamilyDokumenty({ seniorId }: { seniorId: string }) {
         </div>
       ))}
     </div>
+  );
+}
+
+// ─── Zgłoś zapotrzebowanie / zmianę terminu ─────────────────────────────────
+
+const REQUEST_TYPE_PRESETS = ["Usługa złotej rączki", "Transport medyczny", "Zmiana terminu wizyty", "Inne"];
+
+function RequestServiceButton({ seniorId, userId }: { seniorId: string; userId: string }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [orderType, setOrderType] = useState("");
+  const [date, setDate] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const mut = useMutation({
+    mutationFn: async () => {
+      if (!orderType || !date) throw new Error("Wybierz rodzaj zgłoszenia i preferowaną datę.");
+      const { error } = await supabase.from("additional_orders").insert({
+        senior_id: seniorId,
+        order_type: orderType,
+        scheduled_date: date,
+        notes: notes || null,
+        status: "do_akceptacji",
+        requested_by: userId,
+        requested_by_family: true,
+      } as never);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Zgłoszenie wysłane do koordynatora — otrzymasz informację po akceptacji.");
+      qc.invalidateQueries({ queryKey: ["family-requests", seniorId] });
+      setOpen(false);
+      setOrderType(""); setDate(""); setNotes("");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="w-full justify-center gap-2 border-[#0F6E56] text-[#0F6E56] hover:bg-[#0F6E56]/5">
+          <MessageSquarePlus className="h-4 w-4" />
+          Zgłoś zapotrzebowanie / zmianę terminu
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Zgłoś zapotrzebowanie</DialogTitle>
+          <DialogDescription>
+            Prośba trafi do koordynatora jako zlecenie do akceptacji — nie musisz dzwonić.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Czego dotyczy?</label>
+            <Select value={orderType} onValueChange={setOrderType}>
+              <SelectTrigger><SelectValue placeholder="Wybierz" /></SelectTrigger>
+              <SelectContent>
+                {REQUEST_TYPE_PRESETS.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Preferowana data</label>
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Dodatkowe informacje</label>
+            <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="np. godzina, szczegóły prośby..." />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={mut.isPending}>Anuluj</Button>
+          <Button onClick={() => mut.mutate()} disabled={mut.isPending}>
+            {mut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Wyślij zgłoszenie
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

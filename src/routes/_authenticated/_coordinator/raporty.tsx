@@ -14,7 +14,7 @@ import {
   TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Printer, ChevronDown, ChevronRight, Users, User } from "lucide-react";
+import { Printer, ChevronDown, ChevronRight, Users, User, AlertTriangle } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/_coordinator/raporty")({
   component: RaportyPage,
@@ -37,6 +37,16 @@ type VisitRow = {
 };
 
 type CaregiverProfile = { id: string; imie: string; nazwisko: string };
+
+type IncidentVisitRow = {
+  id: string;
+  planned_start: string;
+  notes: string | null;
+  caregiver_id: string | null;
+  status: string;
+  senior: { id: string; imie: string; nazwisko: string } | null;
+  tasks: { id: string; task_name: string; uwagi: string | null; requires_response: boolean | null; response: string | null }[];
+};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -78,6 +88,22 @@ function RaportyPage() {
         .order("planned_start");
       if (error) throw error;
       return (data ?? []) as unknown as VisitRow[];
+    },
+  });
+
+  const { data: incidentVisits, isLoading: incidentsLoading } = useQuery({
+    queryKey: ["raporty-incidents", month, year],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("visits")
+        .select(`id, planned_start, notes, caregiver_id, status,
+                 senior:seniors(id, imie, nazwisko),
+                 tasks:visit_tasks(id, task_name, uwagi, requires_response, response)`)
+        .gte("planned_start", startDate)
+        .lte("planned_start", endDate)
+        .order("planned_start", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as unknown as IncidentVisitRow[];
     },
   });
 
@@ -174,6 +200,7 @@ function RaportyPage() {
         <TabsList className="print:hidden">
           <TabsTrigger value="seniorzy"><Users className="h-4 w-4 mr-1" />Wg seniorów</TabsTrigger>
           <TabsTrigger value="opiekunowie"><User className="h-4 w-4 mr-1" />Wg opiekunów</TabsTrigger>
+          <TabsTrigger value="incydenty"><AlertTriangle className="h-4 w-4 mr-1" />Incydenty i uwagi</TabsTrigger>
         </TabsList>
 
         {/* ── WG SENIORÓW ── */}
@@ -195,6 +222,16 @@ function RaportyPage() {
             cgMap={cgMap}
             monthLabel={monthLabel}
             isLoading={isLoading}
+          />
+        </TabsContent>
+
+        {/* ── INCYDENTY I UWAGI ── */}
+        <TabsContent value="incydenty" className="mt-4">
+          <RaportIncydenty
+            visits={incidentVisits ?? []}
+            cgMap={cgMap}
+            monthLabel={monthLabel}
+            isLoading={incidentsLoading}
           />
         </TabsContent>
       </Tabs>
@@ -494,6 +531,134 @@ function RaportOpiekunowie({ byCaregiver, cgMap, monthLabel, isLoading }: {
           </TableBody>
         </Table>
       </div>
+    </div>
+  );
+}
+
+// ─── RAPORT: INCYDENTY I UWAGI ────────────────────────────────────────────────
+// Zbiorczy wyciąg wszystkich notatek dziennych i uwag przy czynnościach,
+// wpisanych przez opiekunów w aplikacji mobilnej — do szybkiego przeglądu
+// sytuacji wymagających uwagi (np. "Senior odmówił przyjęcia leków").
+
+function RaportIncydenty({
+  visits, cgMap, monthLabel, isLoading,
+}: {
+  visits: IncidentVisitRow[];
+  cgMap: Record<string, string>;
+  monthLabel: string;
+  isLoading: boolean;
+}) {
+  const [onlyRequiresResponse, setOnlyRequiresResponse] = useState(false);
+  const [query, setQuery] = useState("");
+
+  type Entry = {
+    key: string;
+    visitId: string;
+    date: string;
+    senior: string;
+    caregiver: string;
+    source: "notatka dzienna" | "uwaga przy czynności";
+    taskName?: string;
+    text: string;
+    requiresResponse: boolean;
+    response: string | null;
+  };
+
+  const entries: Entry[] = [];
+  for (const v of visits) {
+    const seniorName = v.senior ? `${v.senior.nazwisko} ${v.senior.imie}` : "—";
+    const caregiverName = v.caregiver_id ? (cgMap[v.caregiver_id] ?? "—") : "—";
+    if (v.notes && v.notes.trim()) {
+      entries.push({
+        key: `note-${v.id}`, visitId: v.id, date: v.planned_start,
+        senior: seniorName, caregiver: caregiverName,
+        source: "notatka dzienna", text: v.notes.trim(),
+        requiresResponse: false, response: null,
+      });
+    }
+    for (const t of v.tasks ?? []) {
+      if (t.uwagi && t.uwagi.trim()) {
+        entries.push({
+          key: `task-${t.id}`, visitId: v.id, date: v.planned_start,
+          senior: seniorName, caregiver: caregiverName,
+          source: "uwaga przy czynności", taskName: t.task_name, text: t.uwagi.trim(),
+          requiresResponse: !!t.requires_response, response: t.response,
+        });
+      }
+    }
+  }
+  entries.sort((a, b) => b.date.localeCompare(a.date));
+
+  const filtered = entries.filter((e) => {
+    if (onlyRequiresResponse && !e.requiresResponse) return false;
+    if (query.trim()) {
+      const q = query.trim().toLowerCase();
+      const hay = `${e.senior} ${e.caregiver} ${e.text} ${e.taskName ?? ""}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="hidden print:block mb-6">
+        <h2 className="text-xl font-bold">Incydenty i uwagi — {monthLabel}</h2>
+        <p className="text-sm text-gray-500">Plan Seniora · Zbiorczy wyciąg notatek z wizyt</p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 print:hidden">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Szukaj: senior, opiekun, treść uwagi..."
+          className="h-9 w-64 rounded-md border bg-background px-3 text-sm"
+        />
+        <label className="flex items-center gap-1.5 text-sm">
+          <input
+            type="checkbox"
+            checked={onlyRequiresResponse}
+            onChange={(e) => setOnlyRequiresResponse(e.target.checked)}
+          />
+          Tylko wymagające odpowiedzi koordynatora
+        </label>
+        <span className="text-xs text-muted-foreground ml-auto">{filtered.length} wpisów</span>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-40 w-full" />
+      ) : filtered.length === 0 ? (
+        <div className="rounded-lg border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
+          Brak notatek i uwag pasujących do filtrów w tym miesiącu.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((e) => (
+            <div key={e.key} className={`rounded-lg border bg-card p-4 ${e.requiresResponse ? "border-red-300" : ""}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                <div className="text-sm font-medium">
+                  {e.senior} <span className="text-muted-foreground font-normal">· {fmtDate(e.date)} {fmtTime(e.date)} · {e.caregiver}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="secondary" className="text-xs">
+                    {e.source === "uwaga przy czynności" ? `Czynność: ${e.taskName}` : "Notatka dzienna"}
+                  </Badge>
+                  {e.requiresResponse && (
+                    <Badge variant="secondary" className="text-xs bg-red-500/15 text-red-700">
+                      <AlertTriangle className="mr-1 h-3 w-3" /> Wymaga odpowiedzi
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <p className="text-sm whitespace-pre-wrap">{e.text}</p>
+              {e.response && (
+                <p className="mt-2 text-xs text-muted-foreground border-t pt-2">
+                  <strong>Odpowiedź koordynatora:</strong> {e.response}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

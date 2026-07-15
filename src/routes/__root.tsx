@@ -146,6 +146,20 @@ function RootComponent() {
         return;
       }
 
+      // Zaloguj zdarzenie logowania do audit_log — tylko przy realnym przejściu
+      // brak sesji -> sesja (nie przy odświeżeniu tokenu / przywróceniu sesji).
+      if (event === "SIGNED_IN" && prevSession === false && session) {
+        supabase.from("audit_log").insert({
+          user_id: session.user.id,
+          table_name: "auth_session",
+          record_id: session.user.id,
+          operation: "LOGIN",
+          details: { email: session.user.email },
+        } as never).then(({ error }) => {
+          if (error) console.error("Nie udało się zapisać logowania do audit_log:", error);
+        });
+      }
+
       prevSession = hasSession;
       router.invalidate();
       if (event !== "SIGNED_OUT") queryClient.invalidateQueries();

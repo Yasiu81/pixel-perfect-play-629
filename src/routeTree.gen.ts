@@ -18,11 +18,14 @@ import { Route as AuthenticatedOpiekunRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedAppRouteImport } from './routes/_authenticated/app'
 import { Route as AuthenticatedCoordinatorRouteImport } from './routes/_authenticated/_coordinator'
 import { Route as AuthenticatedCoordinatorWizytyRouteImport } from './routes/_authenticated/_coordinator/wizyty'
+import { Route as AuthenticatedCoordinatorUstawieniaRouteImport } from './routes/_authenticated/_coordinator/ustawienia'
 import { Route as AuthenticatedCoordinatorSeniorzyRouteImport } from './routes/_authenticated/_coordinator/seniorzy'
 import { Route as AuthenticatedCoordinatorRaportyRouteImport } from './routes/_authenticated/_coordinator/raporty'
 import { Route as AuthenticatedCoordinatorPulpitRouteImport } from './routes/_authenticated/_coordinator/pulpit'
 import { Route as AuthenticatedCoordinatorOpiekunowieRouteImport } from './routes/_authenticated/_coordinator/opiekunowie'
 import { Route as AuthenticatedCoordinatorKalendarzRouteImport } from './routes/_authenticated/_coordinator/kalendarz'
+import { Route as AuthenticatedCoordinatorHistoriaRouteImport } from './routes/_authenticated/_coordinator/historia'
+import { Route as AuthenticatedCoordinatorCzatRouteImport } from './routes/_authenticated/_coordinator/czat'
 import { Route as AuthenticatedCoordinatorSeniorzyIdRouteImport } from './routes/_authenticated/_coordinator/seniorzy_.$id'
 
 const AuthRoute = AuthRouteImport.update({
@@ -70,6 +73,12 @@ const AuthenticatedCoordinatorWizytyRoute =
     path: '/wizyty',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorUstawieniaRoute =
+  AuthenticatedCoordinatorUstawieniaRouteImport.update({
+    id: '/ustawienia',
+    path: '/ustawienia',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedCoordinatorSeniorzyRoute =
   AuthenticatedCoordinatorSeniorzyRouteImport.update({
     id: '/seniorzy',
@@ -100,6 +109,18 @@ const AuthenticatedCoordinatorKalendarzRoute =
     path: '/kalendarz',
     getParentRoute: () => AuthenticatedCoordinatorRoute,
   } as any)
+const AuthenticatedCoordinatorHistoriaRoute =
+  AuthenticatedCoordinatorHistoriaRouteImport.update({
+    id: '/historia',
+    path: '/historia',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
+const AuthenticatedCoordinatorCzatRoute =
+  AuthenticatedCoordinatorCzatRouteImport.update({
+    id: '/czat',
+    path: '/czat',
+    getParentRoute: () => AuthenticatedCoordinatorRoute,
+  } as any)
 const AuthenticatedCoordinatorSeniorzyIdRoute =
   AuthenticatedCoordinatorSeniorzyIdRouteImport.update({
     id: '/seniorzy_/$id',
@@ -114,11 +135,14 @@ export interface FileRoutesByFullPath {
   '/opiekun': typeof AuthenticatedOpiekunRoute
   '/strefa/logowanie': typeof StrefaLogowanieRoute
   '/strefa/pulpit': typeof StrefaPulpitRoute
+  '/czat': typeof AuthenticatedCoordinatorCzatRoute
+  '/historia': typeof AuthenticatedCoordinatorHistoriaRoute
   '/kalendarz': typeof AuthenticatedCoordinatorKalendarzRoute
   '/opiekunowie': typeof AuthenticatedCoordinatorOpiekunowieRoute
   '/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/raporty': typeof AuthenticatedCoordinatorRaportyRoute
   '/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRoute
+  '/ustawienia': typeof AuthenticatedCoordinatorUstawieniaRoute
   '/wizyty': typeof AuthenticatedCoordinatorWizytyRoute
   '/seniorzy/$id': typeof AuthenticatedCoordinatorSeniorzyIdRoute
 }
@@ -129,11 +153,14 @@ export interface FileRoutesByTo {
   '/opiekun': typeof AuthenticatedOpiekunRoute
   '/strefa/logowanie': typeof StrefaLogowanieRoute
   '/strefa/pulpit': typeof StrefaPulpitRoute
+  '/czat': typeof AuthenticatedCoordinatorCzatRoute
+  '/historia': typeof AuthenticatedCoordinatorHistoriaRoute
   '/kalendarz': typeof AuthenticatedCoordinatorKalendarzRoute
   '/opiekunowie': typeof AuthenticatedCoordinatorOpiekunowieRoute
   '/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/raporty': typeof AuthenticatedCoordinatorRaportyRoute
   '/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRoute
+  '/ustawienia': typeof AuthenticatedCoordinatorUstawieniaRoute
   '/wizyty': typeof AuthenticatedCoordinatorWizytyRoute
   '/seniorzy/$id': typeof AuthenticatedCoordinatorSeniorzyIdRoute
 }
@@ -147,11 +174,14 @@ export interface FileRoutesById {
   '/_authenticated/opiekun': typeof AuthenticatedOpiekunRoute
   '/strefa/logowanie': typeof StrefaLogowanieRoute
   '/strefa/pulpit': typeof StrefaPulpitRoute
+  '/_authenticated/_coordinator/czat': typeof AuthenticatedCoordinatorCzatRoute
+  '/_authenticated/_coordinator/historia': typeof AuthenticatedCoordinatorHistoriaRoute
   '/_authenticated/_coordinator/kalendarz': typeof AuthenticatedCoordinatorKalendarzRoute
   '/_authenticated/_coordinator/opiekunowie': typeof AuthenticatedCoordinatorOpiekunowieRoute
   '/_authenticated/_coordinator/pulpit': typeof AuthenticatedCoordinatorPulpitRoute
   '/_authenticated/_coordinator/raporty': typeof AuthenticatedCoordinatorRaportyRoute
   '/_authenticated/_coordinator/seniorzy': typeof AuthenticatedCoordinatorSeniorzyRoute
+  '/_authenticated/_coordinator/ustawienia': typeof AuthenticatedCoordinatorUstawieniaRoute
   '/_authenticated/_coordinator/wizyty': typeof AuthenticatedCoordinatorWizytyRoute
   '/_authenticated/_coordinator/seniorzy_/$id': typeof AuthenticatedCoordinatorSeniorzyIdRoute
 }
@@ -164,11 +194,14 @@ export interface FileRouteTypes {
     | '/opiekun'
     | '/strefa/logowanie'
     | '/strefa/pulpit'
+    | '/czat'
+    | '/historia'
     | '/kalendarz'
     | '/opiekunowie'
     | '/pulpit'
     | '/raporty'
     | '/seniorzy'
+    | '/ustawienia'
     | '/wizyty'
     | '/seniorzy/$id'
   fileRoutesByTo: FileRoutesByTo
@@ -179,11 +212,14 @@ export interface FileRouteTypes {
     | '/opiekun'
     | '/strefa/logowanie'
     | '/strefa/pulpit'
+    | '/czat'
+    | '/historia'
     | '/kalendarz'
     | '/opiekunowie'
     | '/pulpit'
     | '/raporty'
     | '/seniorzy'
+    | '/ustawienia'
     | '/wizyty'
     | '/seniorzy/$id'
   id:
@@ -196,11 +232,14 @@ export interface FileRouteTypes {
     | '/_authenticated/opiekun'
     | '/strefa/logowanie'
     | '/strefa/pulpit'
+    | '/_authenticated/_coordinator/czat'
+    | '/_authenticated/_coordinator/historia'
     | '/_authenticated/_coordinator/kalendarz'
     | '/_authenticated/_coordinator/opiekunowie'
     | '/_authenticated/_coordinator/pulpit'
     | '/_authenticated/_coordinator/raporty'
     | '/_authenticated/_coordinator/seniorzy'
+    | '/_authenticated/_coordinator/ustawienia'
     | '/_authenticated/_coordinator/wizyty'
     | '/_authenticated/_coordinator/seniorzy_/$id'
   fileRoutesById: FileRoutesById
@@ -278,6 +317,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorWizytyRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/_coordinator/ustawienia': {
+      id: '/_authenticated/_coordinator/ustawienia'
+      path: '/ustawienia'
+      fullPath: '/ustawienia'
+      preLoaderRoute: typeof AuthenticatedCoordinatorUstawieniaRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/_coordinator/seniorzy': {
       id: '/_authenticated/_coordinator/seniorzy'
       path: '/seniorzy'
@@ -313,6 +359,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCoordinatorKalendarzRouteImport
       parentRoute: typeof AuthenticatedCoordinatorRoute
     }
+    '/_authenticated/_coordinator/historia': {
+      id: '/_authenticated/_coordinator/historia'
+      path: '/historia'
+      fullPath: '/historia'
+      preLoaderRoute: typeof AuthenticatedCoordinatorHistoriaRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
+    '/_authenticated/_coordinator/czat': {
+      id: '/_authenticated/_coordinator/czat'
+      path: '/czat'
+      fullPath: '/czat'
+      preLoaderRoute: typeof AuthenticatedCoordinatorCzatRouteImport
+      parentRoute: typeof AuthenticatedCoordinatorRoute
+    }
     '/_authenticated/_coordinator/seniorzy_/$id': {
       id: '/_authenticated/_coordinator/seniorzy_/$id'
       path: '/seniorzy/$id'
@@ -324,17 +384,23 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthenticatedCoordinatorRouteChildren {
+  AuthenticatedCoordinatorCzatRoute: typeof AuthenticatedCoordinatorCzatRoute
+  AuthenticatedCoordinatorHistoriaRoute: typeof AuthenticatedCoordinatorHistoriaRoute
   AuthenticatedCoordinatorKalendarzRoute: typeof AuthenticatedCoordinatorKalendarzRoute
   AuthenticatedCoordinatorOpiekunowieRoute: typeof AuthenticatedCoordinatorOpiekunowieRoute
   AuthenticatedCoordinatorPulpitRoute: typeof AuthenticatedCoordinatorPulpitRoute
   AuthenticatedCoordinatorRaportyRoute: typeof AuthenticatedCoordinatorRaportyRoute
   AuthenticatedCoordinatorSeniorzyRoute: typeof AuthenticatedCoordinatorSeniorzyRoute
+  AuthenticatedCoordinatorUstawieniaRoute: typeof AuthenticatedCoordinatorUstawieniaRoute
   AuthenticatedCoordinatorWizytyRoute: typeof AuthenticatedCoordinatorWizytyRoute
   AuthenticatedCoordinatorSeniorzyIdRoute: typeof AuthenticatedCoordinatorSeniorzyIdRoute
 }
 
 const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildren =
   {
+    AuthenticatedCoordinatorCzatRoute: AuthenticatedCoordinatorCzatRoute,
+    AuthenticatedCoordinatorHistoriaRoute:
+      AuthenticatedCoordinatorHistoriaRoute,
     AuthenticatedCoordinatorKalendarzRoute:
       AuthenticatedCoordinatorKalendarzRoute,
     AuthenticatedCoordinatorOpiekunowieRoute:
@@ -343,6 +409,8 @@ const AuthenticatedCoordinatorRouteChildren: AuthenticatedCoordinatorRouteChildr
     AuthenticatedCoordinatorRaportyRoute: AuthenticatedCoordinatorRaportyRoute,
     AuthenticatedCoordinatorSeniorzyRoute:
       AuthenticatedCoordinatorSeniorzyRoute,
+    AuthenticatedCoordinatorUstawieniaRoute:
+      AuthenticatedCoordinatorUstawieniaRoute,
     AuthenticatedCoordinatorWizytyRoute: AuthenticatedCoordinatorWizytyRoute,
     AuthenticatedCoordinatorSeniorzyIdRoute:
       AuthenticatedCoordinatorSeniorzyIdRoute,

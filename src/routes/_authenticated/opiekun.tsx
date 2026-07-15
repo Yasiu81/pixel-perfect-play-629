@@ -26,6 +26,11 @@ import {
   Droplets,
   MessageSquare,
   Bell,
+  WifiOff,
+  RefreshCw,
+  CloudOff,
+  MessageCircle,
+  Send,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -34,6 +39,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useOfflineSync } from "@/hooks/useOfflineSync";
+import { runOrQueue, type DbOp } from "@/lib/offlineQueue";
 
 export const Route = createFileRoute("/_authenticated/opiekun")({
   component: OpiekunApp,
@@ -157,20 +164,31 @@ async function saveVisitReport(
   tasks: Task[],
 ) {
   try {
-    // Pobierz aktualne dane wizyty (godziny, notatki)
-    const { data: visit } = await supabase
-      .from("visits")
-      .select("planned_start, hours_billed, notes")
-      .eq("id", visitId)
-      .single();
+    let visitData: { planned_start?: string; hours_billed?: number | null; notes?: string | null } = {};
+    let latestVitals: Record<string, unknown> | null = null;
 
-    // Pobierz parametry życiowe z tej wizyty
-    const { data: vitals } = await supabase
-      .from("senior_vitals")
-      .select("*")
-      .eq("visit_id", visitId)
-      .order("measured_at", { ascending: false })
-      .limit(1);
+    // Dociągnij aktualne dane wizyty/parametrów tylko jeśli jest sieć —
+    // offline korzystamy z tego, co mamy lokalnie (tasks), reszta zostaje null/domyślna.
+    if (typeof navigator === "undefined" || navigator.onLine) {
+      try {
+        const { data: visit } = await supabase
+          .from("visits")
+          .select("planned_start, hours_billed, notes")
+          .eq("id", visitId)
+          .single();
+        if (visit) visitData = visit;
+
+        const { data: vitals } = await supabase
+          .from("senior_vitals")
+          .select("*")
+          .eq("visit_id", visitId)
+          .order("measured_at", { ascending: false })
+          .limit(1);
+        latestVitals = vitals?.[0] ?? null;
+      } catch {
+        // Sieć zniknęła w międzyczasie — kontynuuj z tym, co już mamy.
+      }
+    }
 
     // Przygotuj snapshot czynności
     const tasksSummary = tasks.map(t => ({
@@ -179,17 +197,21 @@ async function saveVisitReport(
       uwagi: t.uwagi,
     }));
 
-    // Zapisz raport
-    await supabase.from("visit_reports").insert({
-      visit_id: visitId,
-      senior_id: seniorId,
-      caregiver_id: caregiverId,
-      report_date: (visit?.planned_start ?? new Date().toISOString()).split("T")[0],
-      tasks_summary: tasksSummary,
-      vitals_summary: vitals?.[0] ?? null,
-      notes: visit?.notes ?? null,
-      hours_billed: visit?.hours_billed ?? null,
-    });
+    // Zapisz raport (od razu albo do kolejki offline)
+    await runOrQueue(`Raport dzienny — wizyta ${visitId}`, [{
+      kind: "insert",
+      table: "visit_reports",
+      data: {
+        visit_id: visitId,
+        senior_id: seniorId,
+        caregiver_id: caregiverId,
+        report_date: (visitData.planned_start ?? new Date().toISOString()).split("T")[0],
+        tasks_summary: tasksSummary,
+        vitals_summary: latestVitals,
+        notes: visitData.notes ?? null,
+        hours_billed: visitData.hours_billed ?? null,
+      },
+    }]);
   } catch (e) {
     // Raport jest opcjonalny — nie blokuj zakończenia wizyty jeśli się nie uda
     console.error("Błąd zapisu raportu:", e);
@@ -200,6 +222,8 @@ function OpiekunApp() {
   const navigate = useNavigate();
   const [activeVisitId, setActiveVisitId] = useState<string | null>(null);
   const [showNotifs, setShowNotifs] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const { isOnline, pendingCount, syncing, syncNow } = useOfflineSync();
 
   const { data: user } = useQuery({
     queryKey: ["me"],
@@ -229,6 +253,21 @@ function OpiekunApp() {
   });
 
   const unread = (notifs ?? []).filter((n: any) => !n.przeczytane).length;
+
+  const { data: unreadChatCount } = useQuery({
+    queryKey: ["chat-unread", user?.id],
+    enabled: !!user,
+    refetchInterval: 20_000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("messages")
+        .select("id")
+        .eq("caregiver_id", user!.id)
+        .neq("sender_id", user!.id)
+        .is("read_at", null);
+      return (data ?? []).length;
+    },
+  });
 
   const markAllRead = async () => {
     if (!user) return;
@@ -318,15 +357,54 @@ function OpiekunApp() {
           </div>
 
           <SosButton />
+          <Button variant="ghost" size="sm" onClick={() => setShowChat(true)} className="relative">
+            <MessageCircle className="h-4 w-4" />
+            {!!unreadChatCount && unreadChatCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+                {unreadChatCount > 9 ? "9+" : unreadChatCount}
+              </span>
+            )}
+          </Button>
           <Button variant="ghost" size="sm" onClick={handleLogout}>
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </header>
 
+      {/* Baner offline / oczekująca synchronizacja */}
+      {(!isOnline || pendingCount > 0) && (
+        <div
+          className={cn(
+            "flex items-center justify-between gap-2 px-4 py-2 text-xs font-medium",
+            !isOnline ? "bg-amber-500/15 text-amber-800" : "bg-sky-500/15 text-sky-800",
+          )}
+        >
+          <div className="flex items-center gap-1.5">
+            {!isOnline ? <WifiOff className="h-3.5 w-3.5" /> : <CloudOff className="h-3.5 w-3.5" />}
+            {!isOnline
+              ? pendingCount > 0
+                ? `Brak zasięgu — ${pendingCount} ${pendingCount === 1 ? "zapis czeka" : "zapisy(ów) czeka"} na wysłanie`
+                : "Brak zasięgu — zapisy będą zachowane lokalnie"
+              : `${pendingCount} ${pendingCount === 1 ? "zapis oczekuje" : "zapisy(ów) oczekuje"} na wysłanie...`}
+          </div>
+          {isOnline && pendingCount > 0 && (
+            <button
+              onClick={() => syncNow()}
+              disabled={syncing}
+              className="flex items-center gap-1 rounded-md bg-white/60 px-2 py-1 hover:bg-white/90"
+            >
+              <RefreshCw className={cn("h-3 w-3", syncing && "animate-spin")} />
+              Synchronizuj teraz
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Content */}
       <main className="flex-1 overflow-auto">
-        {activeVisitId ? (
+        {showChat && user ? (
+          <CaregiverChatScreen meId={user.id} onBack={() => setShowChat(false)} />
+        ) : activeVisitId ? (
           <VisitScreen
             visitId={activeVisitId}
             onBack={() => setActiveVisitId(null)}
@@ -373,22 +451,35 @@ function SosButton() {
     try {
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
-          await supabase.from("alerts").insert({
-            type: "sos",
-            description: `SOS od opiekuna. GPS: ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`,
-          });
-          toast.error("🆘 Alert SOS wysłany do koordynatora!");
+          const { queued } = await runOrQueue("SOS opiekuna", [{
+            kind: "insert",
+            table: "alerts",
+            data: {
+              type: "sos",
+              description: `SOS od opiekuna. GPS: ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`,
+            },
+          }]);
+          if (queued) {
+            toast.error("🆘 Brak zasięgu — SOS zapisany lokalnie, ale NIE dotarł jeszcze do koordynatora. W nagłym wypadku zadzwoń też telefonicznie!", { duration: 10000 });
+          } else {
+            toast.error("🆘 Alert SOS wysłany do koordynatora!");
+          }
         },
         async () => {
-          await supabase.from("alerts").insert({
-            type: "sos",
-            description: "SOS od opiekuna. Brak GPS.",
-          });
-          toast.error("🆘 Alert SOS wysłany (bez lokalizacji)!");
+          const { queued } = await runOrQueue("SOS opiekuna (bez GPS)", [{
+            kind: "insert",
+            table: "alerts",
+            data: { type: "sos", description: "SOS od opiekuna. Brak GPS." },
+          }]);
+          if (queued) {
+            toast.error("🆘 Brak zasięgu — SOS zapisany lokalnie, ale NIE dotarł jeszcze do koordynatora. W nagłym wypadku zadzwoń też telefonicznie!", { duration: 10000 });
+          } else {
+            toast.error("🆘 Alert SOS wysłany (bez lokalizacji)!");
+          }
         },
       );
     } catch {
-      toast.error("Nie udało się wysłać alertu SOS.");
+      toast.error("Nie udało się wysłać alertu SOS. W nagłym wypadku zadzwoń telefonicznie!", { duration: 10000 });
     }
   };
 
@@ -711,6 +802,7 @@ function VisitScreen({
           label="Zakończ wizytę"
           icon="exit"
           visit={visit}
+          tasks={tasks ?? []}
           onSuccess={async () => {
             // Zapisz raport dzienny po zakończeniu
             await saveVisitReport(visitId, visit.senior_id, visit.caregiver_id ?? null, tasks ?? []);
@@ -733,11 +825,13 @@ function NfcGpsStep({
   label,
   icon,
   visit,
+  tasks,
   onSuccess,
 }: {
   label: string;
   icon: "entry" | "exit";
   visit: Visit;
+  tasks?: Task[];
   onSuccess: () => void;
 }) {
   const [step, setStep] = useState<
@@ -836,9 +930,11 @@ function NfcGpsStep({
 
     setStep("checking");
 
-    // ── Zapisz do Supabase ──
+    // ── Zbuduj operacje do zapisu (od razu albo do kolejki offline) ──
     try {
       const serverTime = await fetchServerTime();
+      const ops: DbOp[] = [];
+      let queuedLabel = "";
 
       if (isEntry) {
         const updateData: Record<string, unknown> = {
@@ -850,20 +946,19 @@ function NfcGpsStep({
         };
 
         if (!gpsOk) {
-          // Dodaj alert GPS
-          await supabase.from("alerts").insert({
-            visit_id: visit.id,
-            senior_id: visit.senior_id,
-            type: "gps_mismatch",
-            description: `Wejście: GPS poza strefą ${Math.round(distanceM)}m od adresu (limit ${GPS_RADIUS_M}m). Wymaga weryfikacji koordynatora.`,
+          ops.push({
+            kind: "insert",
+            table: "alerts",
+            data: {
+              visit_id: visit.id,
+              senior_id: visit.senior_id,
+              type: "gps_mismatch",
+              description: `Wejście: GPS poza strefą ${Math.round(distanceM)}m od adresu (limit ${GPS_RADIUS_M}m). Wymaga weryfikacji koordynatora.`,
+            },
           });
         }
-
-        const { error } = await supabase
-          .from("visits")
-          .update(updateData)
-          .eq("id", visit.id);
-        if (error) throw error;
+        ops.push({ kind: "update", table: "visits", data: updateData, match: { id: visit.id } });
+        queuedLabel = `Zameldowanie — ${visit.senior?.imie ?? ""} ${visit.senior?.nazwisko ?? ""}`;
       } else {
         // Wyjście
         const hoursBilled = visit.actual_start
@@ -880,49 +975,55 @@ function NfcGpsStep({
         };
 
         if (!gpsOk) {
-          await supabase.from("alerts").insert({
-            visit_id: visit.id,
-            senior_id: visit.senior_id,
-            type: "gps_mismatch",
-            description: `Wyjście: GPS poza strefą ${Math.round(distanceM)}m. Rozliczono ${hoursBilled}h.`,
+          ops.push({
+            kind: "insert",
+            table: "alerts",
+            data: {
+              visit_id: visit.id,
+              senior_id: visit.senior_id,
+              type: "gps_mismatch",
+              description: `Wyjście: GPS poza strefą ${Math.round(distanceM)}m. Rozliczono ${hoursBilled}h.`,
+            },
           });
         }
+        ops.push({ kind: "update", table: "visits", data: updateData, match: { id: visit.id } });
 
-        const { error } = await supabase
-          .from("visits")
-          .update(updateData)
-          .eq("id", visit.id);
-        if (error) throw error;
-
-        // Po wyjściu: sprawdź uwagi do niewykonanych zadań → Alarm
-        if (!isEntry) {
-          const { data: tasks } = await supabase
-            .from("visit_tasks")
-            .select("id, task_name, completed, uwagi, requires_response, response")
-            .eq("visit_id", visit.id);
-
-          const tasksWithUwagi = (tasks ?? []).filter((t: any) => !t.completed && t.uwagi);
-
-          if (tasksWithUwagi.length > 0) {
-            await supabase.from("visits").update({ status: "alert" }).eq("id", visit.id);
-            await supabase.from("alerts").insert({
+        // Po wyjściu: sprawdź uwagi do niewykonanych zadań → Alarm.
+        // Lista zadań jest już wczytana w aplikacji (visit.tasks), więc możemy
+        // to wyliczyć teraz, nawet offline — bez dodatkowego zapytania do bazy.
+        const tasksWithUwagi = (tasks ?? []).filter((t) => !t.completed && t.uwagi);
+        if (tasksWithUwagi.length > 0) {
+          ops.push({ kind: "update", table: "visits", data: { status: "alert" }, match: { id: visit.id } });
+          ops.push({
+            kind: "insert",
+            table: "alerts",
+            data: {
               visit_id: visit.id,
               senior_id: visit.senior_id,
               type: "task_incomplete",
-              description: `${tasksWithUwagi.length} czynności niewykonanych z uwagami: ${tasksWithUwagi.map((t: any) => t.task_name).join(", ")}`,
-            });
-          }
+              description: `${tasksWithUwagi.length} czynności niewykonanych z uwagami: ${tasksWithUwagi.map((t) => t.task_name).join(", ")}`,
+            },
+          });
         }
+        queuedLabel = `Wymeldowanie — ${visit.senior?.imie ?? ""} ${visit.senior?.nazwisko ?? ""}`;
       }
 
+      const { queued } = await runOrQueue(queuedLabel, ops);
+
       setStep("done");
-      toast.success(
-        gpsOk
-          ? isEntry
-            ? "Wizyta rozpoczęta ✓"
-            : "Wizyta zakończona ✓"
-          : "Zapisano z flagą: wymaga weryfikacji koordynatora",
-      );
+      if (queued) {
+        toast.success(
+          "Brak zasięgu — zapisano lokalnie na telefonie. Wyśle się automatycznie, gdy tylko wróci internet.",
+        );
+      } else {
+        toast.success(
+          gpsOk
+            ? isEntry
+              ? "Wizyta rozpoczęta ✓"
+              : "Wizyta zakończona ✓"
+            : "Zapisano z flagą: wymaga weryfikacji koordynatora",
+        );
+      }
       onSuccess();
     } catch (e) {
       setErrorMsg((e as Error).message);
@@ -1057,15 +1158,29 @@ function EmergencyRegistration({
               : 0,
           };
 
-      await supabase.from("visits").update(updateData).eq("id", visit.id);
-      await supabase.from("alerts").insert({
-        visit_id: visit.id,
-        senior_id: visit.senior_id,
-        type: "nfc_mismatch",
-        description: `Tryb awaryjny (${isEntry ? "wejście" : "wyjście"}): ${note}`,
-      });
+      const ops: DbOp[] = [
+        { kind: "update", table: "visits", data: updateData, match: { id: visit.id } },
+        {
+          kind: "insert",
+          table: "alerts",
+          data: {
+            visit_id: visit.id,
+            senior_id: visit.senior_id,
+            type: "nfc_mismatch",
+            description: `Tryb awaryjny (${isEntry ? "wejście" : "wyjście"}): ${note}`,
+          },
+        },
+      ];
+      const { queued } = await runOrQueue(
+        `Tryb awaryjny — ${visit.senior?.imie ?? ""} ${visit.senior?.nazwisko ?? ""}`,
+        ops,
+      );
 
-      toast.warning("Zapisano w trybie awaryjnym — koordynator musi zatwierdzić.");
+      toast.warning(
+        queued
+          ? "Brak zasięgu — zapisano lokalnie. Wyśle się automatycznie po powrocie internetu (koordynator i tak musi zatwierdzić)."
+          : "Zapisano w trybie awaryjnym — koordynator musi zatwierdzić.",
+      );
       onSuccess();
     } catch (e) {
       toast.error((e as Error).message);
@@ -1111,38 +1226,46 @@ function TasksStep({
   const [uwagi, setUwagi] = useState<Record<string, string>>({});
   const [responses, setResponses] = useState<Record<string, string>>({});
   const [savingResponse, setSavingResponse] = useState<string | null>(null);
+  // Optymistyczne nadpisanie stanu "wykonane" — widoczne natychmiast, nawet
+  // offline, niezależnie od tego czy odświeżenie z serwera się powiodło.
+  const [localCompleted, setLocalCompleted] = useState<Record<string, boolean>>({});
 
   const saveResponse = async (taskId: string) => {
     setSavingResponse(taskId);
     try {
-      await supabase
-        .from("visit_tasks")
-        .update({ response: responses[taskId] || null } as never)
-        .eq("id", taskId);
+      const { queued } = await runOrQueue(`Odpowiedź na czynność ${taskId}`, [
+        { kind: "update", table: "visit_tasks", data: { response: responses[taskId] || null }, match: { id: taskId } },
+      ]);
       onRefresh();
-      toast.success("Odpowiedź zapisana");
+      toast.success(queued ? "Odpowiedź zapisana lokalnie (offline)" : "Odpowiedź zapisana");
     } finally {
       setSavingResponse(null);
     }
   };
 
   const toggleTask = async (task: Task) => {
-    await supabase
-      .from("visit_tasks")
-      .update({
-        completed: !task.completed,
-        completed_at: !task.completed ? new Date().toISOString() : null,
-      } as never)
-      .eq("id", task.id);
+    const nextCompleted = !(localCompleted[task.id] ?? task.completed);
+    setLocalCompleted((m) => ({ ...m, [task.id]: nextCompleted }));
+    const { queued } = await runOrQueue(`Czynność: ${task.task_name}`, [
+      {
+        kind: "update",
+        table: "visit_tasks",
+        data: { completed: nextCompleted, completed_at: nextCompleted ? new Date().toISOString() : null },
+        match: { id: task.id },
+      },
+    ]);
+    if (queued) toast.message("Zapisano lokalnie — wyśle się po powrocie zasięgu.");
     onRefresh();
   };
 
   const saveUwagi = async (taskId: string) => {
     const val = uwagi[taskId] ?? "";
-    await supabase.from("visit_tasks").update({ uwagi: val || null } as never).eq("id", taskId);
+    const { queued } = await runOrQueue(`Uwaga do czynności ${taskId}`, [
+      { kind: "update", table: "visit_tasks", data: { uwagi: val || null }, match: { id: taskId } },
+    ]);
     onRefresh();
     setExpandedUwagi(null);
-    toast.success("Uwaga zapisana");
+    toast.success(queued ? "Uwaga zapisana lokalnie (offline)" : "Uwaga zapisana");
   };
 
   return (
@@ -1159,23 +1282,25 @@ function TasksStep({
             Brak zaplanowanych czynności dla tej wizyty.
           </p>
         )}
-        {tasks.map((t) => (
+        {tasks.map((t) => {
+          const isCompleted = localCompleted[t.id] ?? t.completed;
+          return (
           <div key={t.id} className="divide-y">
             <div className="flex items-center gap-2 px-4 py-3">
               <button
                 onClick={() => toggleTask(t)}
                 className="flex items-center gap-3 flex-1 text-left hover:opacity-80"
               >
-                {t.completed ? (
+                {isCompleted ? (
                   <CheckSquare className="h-5 w-5 flex-shrink-0 text-emerald-500" />
                 ) : (
                   <Square className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
                 )}
-                <span className={cn("text-sm", t.completed && "line-through text-muted-foreground")}>
+                <span className={cn("text-sm", isCompleted && "line-through text-muted-foreground")}>
                   {t.task_name}
                 </span>
               </button>
-              {!t.completed && (
+              {!isCompleted && (
                 <button
                   onClick={() => {
                     setExpandedUwagi(expandedUwagi === t.id ? null : t.id);
@@ -1209,7 +1334,7 @@ function TasksStep({
               </div>
             )}
             {/* Pokaż zapisaną uwagę */}
-            {t.uwagi && expandedUwagi !== t.id && !t.completed && (
+            {t.uwagi && expandedUwagi !== t.id && !isCompleted && (
               <div className="px-4 py-1.5 bg-amber-500/5 text-xs text-amber-700">
                 ⚠️ {t.uwagi}
               </div>
@@ -1258,7 +1383,8 @@ function TasksStep({
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1288,23 +1414,30 @@ function VitalsStep({
     if (!hasAny) { toast.error("Wypełnij przynajmniej jeden parametr"); return; }
     setSaving(true);
     try {
-      const { data: user } = await supabase.auth.getUser();
-      const { error } = await supabase.from("senior_vitals").insert({
-        visit_id: visitId,
-        senior_id: seniorId,
-        created_by: user.user?.id,
-        cisnienie_skurczowe: vitals.cisnienie_skurczowe ? Number(vitals.cisnienie_skurczowe) : null,
-        cisnienie_rozkurczowe: vitals.cisnienie_rozkurczowe ? Number(vitals.cisnienie_rozkurczowe) : null,
-        puls: vitals.puls ? Number(vitals.puls) : null,
-        temperatura: vitals.temperatura ? Number(vitals.temperatura) : null,
-        saturacja: vitals.saturacja ? Number(vitals.saturacja) : null,
-        waga: vitals.waga ? Number(vitals.waga) : null,
-        poziom_cukru: vitals.poziom_cukru ? Number(vitals.poziom_cukru) : null,
-        uwagi: vitals.uwagi || null,
-      });
-      if (error) throw error;
+      // getSession() czyta z lokalnej pamięci (działa offline), w przeciwieństwie
+      // do getUser(), które domyślnie odpytuje serwer.
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user?.id ?? null;
+
+      const { queued } = await runOrQueue(`Parametry życiowe — wizyta ${visitId}`, [{
+        kind: "insert",
+        table: "senior_vitals",
+        data: {
+          visit_id: visitId,
+          senior_id: seniorId,
+          created_by: userId,
+          cisnienie_skurczowe: vitals.cisnienie_skurczowe ? Number(vitals.cisnienie_skurczowe) : null,
+          cisnienie_rozkurczowe: vitals.cisnienie_rozkurczowe ? Number(vitals.cisnienie_rozkurczowe) : null,
+          puls: vitals.puls ? Number(vitals.puls) : null,
+          temperatura: vitals.temperatura ? Number(vitals.temperatura) : null,
+          saturacja: vitals.saturacja ? Number(vitals.saturacja) : null,
+          waga: vitals.waga ? Number(vitals.waga) : null,
+          poziom_cukru: vitals.poziom_cukru ? Number(vitals.poziom_cukru) : null,
+          uwagi: vitals.uwagi || null,
+        },
+      }]);
       setSaved(true);
-      toast.success("Parametry zapisane");
+      toast.success(queued ? "Parametry zapisane lokalnie (offline)" : "Parametry zapisane");
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -1391,8 +1524,13 @@ function NotesStep({
 
   const save = async (val: string) => {
     setSaving(true);
-    await supabase.from("visits").update({ notes: val }).eq("id", visitId);
-    setSaving(false);
+    try {
+      await runOrQueue(`Notatka z wizyty ${visitId}`, [
+        { kind: "update", table: "visits", data: { notes: val }, match: { id: visitId } },
+      ]);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleChange = (val: string) => {
@@ -1473,6 +1611,164 @@ function CompletedSummary({ visit, tasks }: { visit: Visit; tasks: Task[] }) {
           Wizyta wymaga weryfikacji przez koordynatora
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Czat z koordynatorem ────────────────────────────────────────────────────
+
+type ChatMessage = {
+  id: string;
+  caregiver_id: string;
+  sender_id: string;
+  body: string;
+  read_at: string | null;
+  created_at: string;
+};
+
+function fmtChatDay(iso: string) {
+  const d = new Date(iso);
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) return "Dziś";
+  return d.toLocaleDateString("pl-PL", { day: "numeric", month: "long" });
+}
+
+function CaregiverChatScreen({ meId, onBack }: { meId: string; onBack: () => void }) {
+  const qc = useQueryClient();
+  const [draft, setDraft] = useState("");
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const { data: messages, isLoading } = useQuery({
+    queryKey: ["my-chat-thread", meId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("id, caregiver_id, sender_id, body, read_at, created_at")
+        .eq("caregiver_id", meId)
+        .order("created_at", { ascending: true })
+        .limit(500);
+      if (error) throw error;
+      return (data ?? []) as unknown as ChatMessage[];
+    },
+  });
+
+  useEffect(() => {
+    const channel = supabase
+      .channel(`my-messages-${meId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages", filter: `caregiver_id=eq.${meId}` },
+        () => qc.invalidateQueries({ queryKey: ["my-chat-thread", meId] }),
+      )
+      .subscribe();
+    return () => { channel.unsubscribe(); };
+  }, [meId, qc]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    const unreadIds = (messages ?? [])
+      .filter((m) => m.sender_id !== meId && !m.read_at)
+      .map((m) => m.id);
+    if (unreadIds.length === 0) return;
+    supabase.from("messages").update({ read_at: new Date().toISOString() } as never)
+      .in("id", unreadIds)
+      .then(({ error }) => {
+        if (!error) qc.invalidateQueries({ queryKey: ["chat-unread", meId] });
+      });
+  }, [messages, meId, qc]);
+
+  const sendMut = useMutation({
+    mutationFn: async (body: string) => {
+      const { queued } = await runOrQueue(`Wiadomość do koordynatora`, [{
+        kind: "insert",
+        table: "messages",
+        data: { caregiver_id: meId, sender_id: meId, body },
+      }]);
+      return queued;
+    },
+    onSuccess: (queued) => {
+      setDraft("");
+      qc.invalidateQueries({ queryKey: ["my-chat-thread", meId] });
+      if (queued) toast.message("Brak zasięgu — wiadomość wyśle się automatycznie po powrocie internetu.");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const handleSend = () => {
+    const body = draft.trim();
+    if (!body) return;
+    sendMut.mutate(body);
+  };
+
+  return (
+    <div className="mx-auto flex h-full max-w-lg flex-col">
+      <div className="flex items-center gap-3 border-b bg-card px-4 py-3">
+        <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2">
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div>
+          <h1 className="font-semibold">Czat z koordynatorem</h1>
+          <p className="text-xs text-muted-foreground">Plan Seniora — biuro</p>
+        </div>
+      </div>
+
+      <div className="flex-1 space-y-3 overflow-y-auto p-4">
+        {isLoading ? (
+          <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
+        ) : (messages ?? []).length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            Brak wiadomości. Napisz do koordynatora, jeśli masz pytanie lub problem.
+          </p>
+        ) : (
+          (messages ?? []).map((m, i) => {
+            const isMe = m.sender_id === meId;
+            const prev = messages![i - 1];
+            const showDay = !prev || fmtChatDay(prev.created_at) !== fmtChatDay(m.created_at);
+            return (
+              <div key={m.id}>
+                {showDay && (
+                  <div className="my-2 text-center text-xs text-muted-foreground">{fmtChatDay(m.created_at)}</div>
+                )}
+                <div className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm ${
+                      isMe ? "bg-primary text-primary-foreground" : "bg-muted"
+                    }`}
+                  >
+                    <div className="whitespace-pre-wrap break-words">{m.body}</div>
+                    <div className={`mt-1 text-[10px] ${isMe ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                      {fmtTime(m.created_at)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <div className="flex items-end gap-2 border-t bg-card p-3">
+        <Textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSend();
+            }
+          }}
+          placeholder="Napisz wiadomość..."
+          rows={1}
+          className="max-h-32 min-h-[40px] resize-none"
+        />
+        <Button size="icon" onClick={handleSend} disabled={sendMut.isPending || !draft.trim()}>
+          {sendMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </Button>
+      </div>
     </div>
   );
 }

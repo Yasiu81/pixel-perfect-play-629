@@ -21,6 +21,7 @@ import {
   Printer,
   RefreshCw,
   Truck,
+  Lock,
 } from "lucide-react";
 import { format, addDays, startOfDay, endOfDay } from "date-fns";
 import { pl } from "date-fns/locale";
@@ -123,6 +124,7 @@ type OrderRow = {
   scheduled_end: string | null;
   status: string;
   notes: string | null;
+  requested_by_family: boolean;
   senior: { imie: string; nazwisko: string; lat: number | null; lng: number | null } | null;
 };
 
@@ -132,6 +134,8 @@ const STATUS_TONE: Record<string, string> = {
   completed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
   alert: "bg-red-500/15 text-red-700 dark:text-red-400",
   requires_verification: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  do_akceptacji: "bg-violet-500/15 text-violet-700 dark:text-violet-400",
+  odrzucona: "bg-red-500/15 text-red-700 dark:text-red-400",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -140,6 +144,8 @@ const STATUS_LABEL: Record<string, string> = {
   completed: "Zakończona",
   alert: "Alarm",
   requires_verification: "Do weryfikacji",
+  do_akceptacji: "Zgłoszenie od rodziny — do akceptacji",
+  odrzucona: "Odrzucona",
 };
 
 function formatDateTime(iso: string) {
@@ -180,11 +186,13 @@ type VisitRow = {
 function VisitDetailPanel({
   visit,
   caregivers,
+  locked,
   onClose,
   onUpdated,
 }: {
   visit: VisitRow;
   caregivers: { id: string; imie: string; nazwisko: string }[];
+  locked: boolean;
   onClose: () => void;
   onUpdated: () => void;
 }) {
@@ -203,6 +211,10 @@ function VisitDetailPanel({
   const senior = visit.senior;
 
   const save = async (patch: Record<string, unknown>) => {
+    if (locked) {
+      toast.error("Ten miesiąc jest zamknięty — edycja wizyt jest zablokowana. Poproś koordynatora o odblokowanie w Historii.");
+      return;
+    }
     setSaving(true);
     try {
       const { error } = await supabase.from("visits").update(patch).eq("id", visit.id);
@@ -244,6 +256,12 @@ function VisitDetailPanel({
         </div>
 
         <div className="space-y-4 p-5">
+          {locked && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-500/10 p-3 text-sm text-amber-800">
+              <Lock className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <span>Ten miesiąc jest zamknięty — edycja wizyt jest zablokowana. Odblokować można w zakładce Historia.</span>
+            </div>
+          )}
           {/* Status */}
           <div className="rounded-lg border bg-card p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -527,6 +545,15 @@ function WizytyPage() {
   const dayEndISO = useMemo(() => endOfDay(selectedDate).toISOString(), [selectedDate]);
   const dateKey = format(selectedDate, "yyyy-MM-dd");
 
+  const { data: isMonthLocked } = useQuery({
+    queryKey: ["is-month-locked", dateKey.slice(0, 7)],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("is_month_locked" as never, { check_date: dateKey } as never);
+      if (error) return false;
+      return !!data;
+    },
+  });
+
   const visitsQ = useQuery({
     queryKey: ["visits-list", filter, dateKey],
     refetchInterval: false,
@@ -557,7 +584,7 @@ function WizytyPage() {
         .from("additional_orders")
         .select(
           `id, order_type, contractor, scheduled_date, scheduled_start, scheduled_end,
-           status, notes,
+           status, notes, requested_by_family,
            senior:seniors(imie, nazwisko, lat, lng)`,
         )
         .eq("scheduled_date", dateKey)
@@ -620,6 +647,18 @@ function WizytyPage() {
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
       form.reset();
       setDialogOpen(false);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const decideOrderMut = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: "planned" | "odrzucona" }) => {
+      const { error } = await supabase.from("additional_orders").update({ status } as never).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_d, v) => {
+      toast.success(v.status === "planned" ? "Zgłoszenie zaakceptowane" : "Zgłoszenie odrzucone");
+      queryClient.invalidateQueries({ queryKey: ["additional-orders-list"] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -746,6 +785,13 @@ function WizytyPage() {
         </p>
       </div>
 
+      {isMonthLocked && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-500/10 px-3 py-2 text-sm text-amber-800">
+          <Lock className="h-4 w-4 flex-shrink-0" />
+          Miesiąc {format(selectedDate, "LLLL yyyy", { locale: pl })} jest zamknięty — wizyty i zlecenia dodatkowe z tego okresu nie można dodawać, zmieniać ani usuwać. Odblokować można w zakładce Historia.
+        </div>
+      )}
+
       {/* Pasek dnia: nawigacja, filtry, druk, dodawanie */}
       <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3">
         <div className="font-medium">
@@ -793,7 +839,7 @@ function WizytyPage() {
           </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button disabled={!!isMonthLocked} title={isMonthLocked ? "Miesiąc zamknięty — dodawanie wyłączone" : undefined}>
                 <Plus />
                 Zaplanuj nową usługę
               </Button>
@@ -1167,7 +1213,7 @@ function WizytyPage() {
             </CollapsibleTrigger>
             <Dialog open={orderDialogOpen} onOpenChange={setOrderDialogOpen}>
               <DialogTrigger asChild>
-                <Button size="sm" variant="outline">
+                <Button size="sm" variant="outline" disabled={!!isMonthLocked} title={isMonthLocked ? "Miesiąc zamknięty — dodawanie wyłączone" : undefined}>
                   <Plus />
                   Dodaj zlecenie
                 </Button>
@@ -1315,18 +1361,22 @@ function WizytyPage() {
                   <TableHead>Godzina</TableHead>
                   <TableHead>Wykonawca</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {ordersForDay.length > 0 ? (
                   ordersForDay.map((o) => (
-                    <TableRow key={o.id}>
+                    <TableRow key={o.id} className={o.status === "do_akceptacji" ? "bg-violet-500/5" : ""}>
                       <TableCell className="font-medium">
                         {o.senior ? `${o.senior.nazwisko} ${o.senior.imie}` : "—"}
                       </TableCell>
                       <TableCell className="flex items-center gap-2 text-sm">
                         <Truck className="h-4 w-4 text-violet-600" />
                         {o.order_type}
+                        {o.requested_by_family && (
+                          <Badge variant="secondary" className="text-xs bg-violet-500/15 text-violet-700">Od rodziny</Badge>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {o.scheduled_start ? o.scheduled_start.slice(0, 5) : "—"}
@@ -1340,11 +1390,27 @@ function WizytyPage() {
                           {STATUS_LABEL[o.status] ?? o.status}
                         </Badge>
                       </TableCell>
+                      <TableCell>
+                        {o.status === "do_akceptacji" && (
+                          <div className="flex gap-1.5">
+                            <Button size="sm" onClick={() => decideOrderMut.mutate({ id: o.id, status: "planned" })}>
+                              Akceptuj
+                            </Button>
+                            <Button
+                              size="sm" variant="outline"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => decideOrderMut.mutate({ id: o.id, status: "odrzucona" })}
+                            >
+                              Odrzuć
+                            </Button>
+                          </div>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
                       Brak zleceń dodatkowych tego dnia.
                     </TableCell>
                   </TableRow>
@@ -1435,6 +1501,7 @@ function WizytyPage() {
         <VisitDetailPanel
           visit={selectedVisit}
           caregivers={caregiversQ.data ?? []}
+          locked={!!isMonthLocked}
           onClose={() => setSelectedVisit(null)}
           onUpdated={() => {
             setSelectedVisit(null);

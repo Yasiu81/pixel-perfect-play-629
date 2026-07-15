@@ -1,7 +1,8 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard, Users, CalendarClock,
-  FileBarChart, LogOut, UserCog, History, Settings,
+  FileBarChart, LogOut, UserCog, History, Settings, MessageCircle,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarFooter,
@@ -16,17 +17,33 @@ const mainItems = [
   { title: "Opiekunowie",   url: "/opiekunowie", icon: UserCog },
   { title: "Seniorzy",      url: "/seniorzy",    icon: Users },
   { title: "Monitor wizyt", url: "/wizyty",      icon: CalendarClock },
+  { title: "Czat",          url: "/czat",        icon: MessageCircle },
   { title: "Raporty",       url: "/raporty",     icon: FileBarChart },
 ];
 
 const bottomItems = [
-  { title: "Historia logowania", url: "/historia", icon: History,  disabled: true },
-  { title: "Ustawienia",         url: "/ustawienia", icon: Settings, disabled: true },
+  { title: "Historia logowania", url: "/historia", icon: History,  disabled: false },
+  { title: "Ustawienia",         url: "/ustawienia", icon: Settings, disabled: false },
 ];
 
 export function CoordinatorSidebar() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  const { data: unreadCount } = useQuery({
+    queryKey: ["messages-unread-count"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("messages")
+        .select("sender_id, caregiver_id")
+        .is("read_at", null)
+        .limit(500);
+      // Liczymy tylko wiadomości OD opiekuna (sender_id = caregiver_id wątku) —
+      // PostgREST nie porównuje dwóch kolumn bezpośrednio, więc filtrujemy w JS.
+      return (data ?? []).filter((m: { sender_id: string; caregiver_id: string }) => m.sender_id === m.caregiver_id).length;
+    },
+    refetchInterval: 20_000,
+  });
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -57,9 +74,14 @@ export function CoordinatorSidebar() {
                 return (
                   <SidebarMenuItem key={item.url}>
                     <SidebarMenuButton asChild isActive={active} tooltip={item.title}>
-                      <Link to={item.url}>
+                      <Link to={item.url} className="relative">
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
+                        {item.url === "/czat" && !!unreadCount && unreadCount > 0 && (
+                          <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                            {unreadCount > 9 ? "9+" : unreadCount}
+                          </span>
+                        )}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -77,14 +99,27 @@ export function CoordinatorSidebar() {
             <SidebarMenu>
               {bottomItems.map((item) => (
                 <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton
-                    tooltip={item.title}
-                    className="opacity-50 cursor-not-allowed"
-                    disabled
-                  >
-                    <item.icon className="h-4 w-4" />
-                    <span>{item.title}</span>
-                  </SidebarMenuButton>
+                  {item.disabled ? (
+                    <SidebarMenuButton
+                      tooltip={item.title}
+                      className="opacity-50 cursor-not-allowed"
+                      disabled
+                    >
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </SidebarMenuButton>
+                  ) : (
+                    <SidebarMenuButton
+                      asChild
+                      isActive={pathname === item.url || pathname.startsWith(item.url + "/")}
+                      tooltip={item.title}
+                    >
+                      <Link to={item.url}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  )}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>

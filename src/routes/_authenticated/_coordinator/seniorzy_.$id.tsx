@@ -27,6 +27,7 @@ import {
   Calendar,
   Printer,
   Truck,
+  Lock,
 } from "lucide-react";
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -989,6 +990,15 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
   const endOfMonth = new Date(viewYear, viewMonth + 1, 0, 23, 59, 59).toISOString();
   const daysInMonthCount = new Date(viewYear, viewMonth + 1, 0).getDate();
   const monthDateFrom = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-01`;
+
+  const { data: isMonthLocked } = useQuery({
+    queryKey: ["is-month-locked-senior", viewYear, viewMonth],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("is_month_locked" as never, { check_date: monthDateFrom } as never);
+      if (error) return false;
+      return !!data;
+    },
+  });
   const monthDateTo = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(daysInMonthCount).padStart(2, "0")}`;
 
   const { data: visits, isLoading } = useQuery({
@@ -1123,6 +1133,13 @@ function KalendarzTab({ seniorId, seniorName }: { seniorId: string; seniorName: 
           </Button>
         </div>
       </div>
+
+      {isMonthLocked && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 print:hidden">
+          <Lock className="h-4 w-4 flex-shrink-0" />
+          Ten miesiąc jest zamknięty — wizyty i zlecenia dodatkowe nie można zmieniać ani usuwać.
+        </div>
+      )}
 
       <div className="rounded-lg border bg-card overflow-hidden print:hidden">
         <div className="grid grid-cols-7 border-b">
@@ -1570,12 +1587,16 @@ type FamilyAccessRow = {
   relacja: string | null;
   created_at: string;
   email?: string;
+  dostep_opiekunczy: boolean;
+  dostep_finansowy: boolean;
 };
 
 const inviteSchema = z.object({
   email: z.string().trim().email("Niepoprawny adres e-mail"),
   password: z.string().min(8, "Minimum 8 znaków"),
   relacja: z.string().trim().min(1, "Wymagane").max(50),
+  dostep_opiekunczy: z.boolean(),
+  dostep_finansowy: z.boolean(),
 });
 
 type InviteForm = z.infer<typeof inviteSchema>;
@@ -1583,18 +1604,50 @@ type InviteForm = z.infer<typeof inviteSchema>;
 function RodzinaTab({ seniorId }: { seniorId: string }) {
   const qc = useQueryClient();
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [editing, setEditing] = useState<FamilyAccessRow | null>(null);
 
   const { data: accessList, isLoading } = useQuery({
     queryKey: ["family-access", seniorId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("family_access")
-        .select("id, user_id, relacja, created_at")
+        .select("id, user_id, relacja, created_at, dostep_opiekunczy, dostep_finansowy")
         .eq("senior_id", seniorId);
       if (error) throw error;
-      return data as FamilyAccessRow[];
+      return (data ?? []) as unknown as FamilyAccessRow[];
     },
   });
+
+  const userIds = (accessList ?? []).map((a) => a.user_id);
+  const { data: activityLog } = useQuery({
+    queryKey: ["family-activity", seniorId, userIds.join(",")],
+    enabled: userIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("audit_log")
+        .select("user_id, operation, table_name, details, created_at")
+        .in("user_id", userIds)
+        .in("operation", ["LOGIN", "READ_DOCUMENT"])
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const lastActivityByUser = useMemo(() => {
+    const m: Record<string, { lastLogin?: string; lastDoc?: { name: string; at: string } }> = {};
+    for (const row of activityLog ?? []) {
+      const uid = row.user_id as string;
+      if (!m[uid]) m[uid] = {};
+      if (row.operation === "LOGIN" && !m[uid].lastLogin) m[uid].lastLogin = row.created_at as string;
+      if (row.operation === "READ_DOCUMENT" && !m[uid].lastDoc) {
+        const details = row.details as { document_name?: string } | null;
+        m[uid].lastDoc = { name: details?.document_name ?? "dokument", at: row.created_at as string };
+      }
+    }
+    return m;
+  }, [activityLog]);
 
   const removeMut = useMutation({
     mutationFn: async (id: string) => {
@@ -1627,27 +1680,55 @@ function RodzinaTab({ seniorId }: { seniorId: string }) {
         </div>
       ) : (
         <div className="rounded-lg border bg-card divide-y">
-          {accessList.map((a) => (
-            <div key={a.id} className="flex items-center justify-between px-4 py-3">
-              <div>
-                <div className="text-sm font-medium">{a.relacja || "Członek rodziny"}</div>
-                <div className="text-xs text-muted-foreground">
-                  Dostęp od {new Date(a.created_at).toLocaleDateString("pl-PL")}
+          {accessList.map((a) => {
+            const activity = lastActivityByUser[a.user_id];
+            return (
+              <div key={a.id} className="px-4 py-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium">{a.relacja || "Członek rodziny"}</div>
+                    <div className="text-xs text-muted-foreground">
+                      Dostęp od {new Date(a.created_at).toLocaleDateString("pl-PL")}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => setEditing(a)}>
+                      <Pencil className="h-3.5 w-3.5" /> Uprawnienia
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => {
+                        if (confirm("Odebrać dostęp tej osobie?")) removeMut.mutate(a.id);
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                      Odbierz dostęp
+                    </Button>
+                  </div>
                 </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <Badge variant="secondary" className={a.dostep_opiekunczy ? "bg-sky-500/15 text-sky-700 text-xs" : "bg-muted text-muted-foreground text-xs"}>
+                    {a.dostep_opiekunczy ? "✓" : "✗"} Dostęp opiekuńczy
+                  </Badge>
+                  <Badge variant="secondary" className={a.dostep_finansowy ? "bg-emerald-500/15 text-emerald-700 text-xs" : "bg-muted text-muted-foreground text-xs"}>
+                    {a.dostep_finansowy ? "✓" : "✗"} Dostęp finansowy
+                  </Badge>
+                </div>
+                {(activity?.lastLogin || activity?.lastDoc) && (
+                  <div className="text-xs text-muted-foreground border-t pt-2 space-y-0.5">
+                    {activity.lastLogin && (
+                      <div>Ostatnie logowanie: <strong>{new Date(activity.lastLogin).toLocaleString("pl-PL")}</strong></div>
+                    )}
+                    {activity.lastDoc && (
+                      <div>Ostatnio przeglądany dokument: <strong>{activity.lastDoc.name}</strong> ({new Date(activity.lastDoc.at).toLocaleString("pl-PL")})</div>
+                    )}
+                  </div>
+                )}
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-destructive hover:text-destructive"
-                onClick={() => {
-                  if (confirm("Odebrać dostęp tej osobie?")) removeMut.mutate(a.id);
-                }}
-              >
-                <X className="h-4 w-4" />
-                Odbierz dostęp
-              </Button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -1658,7 +1739,65 @@ function RodzinaTab({ seniorId }: { seniorId: string }) {
           onClose={() => setInviteOpen(false)}
         />
       )}
+      {editing && (
+        <EditFamilyAccessDialog
+          seniorId={seniorId}
+          access={editing}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function EditFamilyAccessDialog({
+  seniorId, access, onClose,
+}: { seniorId: string; access: FamilyAccessRow; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [opiekunczy, setOpiekunczy] = useState(access.dostep_opiekunczy);
+  const [finansowy, setFinansowy] = useState(access.dostep_finansowy);
+
+  const mut = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("family_access").update({
+        dostep_opiekunczy: opiekunczy,
+        dostep_finansowy: finansowy,
+      } as never).eq("id", access.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Uprawnienia zaktualizowane");
+      qc.invalidateQueries({ queryKey: ["family-access", seniorId] });
+      onClose();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Uprawnienia — {access.relacja || "Członek rodziny"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-0.5" checked={opiekunczy} onChange={(e) => setOpiekunczy(e.target.checked)} />
+            <span><strong>Dostęp opiekuńczy</strong> — raporty z wizyt, parametry życiowe, kalendarz</span>
+          </label>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-0.5" checked={finansowy} onChange={(e) => setFinansowy(e.target.checked)} />
+            <span><strong>Dostęp finansowy</strong> — dokumenty (w tym faktury), saldo godzin i stawka</span>
+          </label>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose} disabled={mut.isPending}>Anuluj</Button>
+          <Button onClick={() => mut.mutate()} disabled={mut.isPending}>
+            {mut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Zapisz
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1674,7 +1813,7 @@ function InviteFamilyDialog({
   const qc = useQueryClient();
   const form = useForm<InviteForm>({
     resolver: zodResolver(inviteSchema),
-    defaultValues: { email: "", password: "", relacja: "" },
+    defaultValues: { email: "", password: "", relacja: "", dostep_opiekunczy: true, dostep_finansowy: true },
   });
 
   const mut = useMutation({
@@ -1694,12 +1833,14 @@ function InviteFamilyDialog({
       });
       if (roleErr) throw roleErr;
 
-      // 3. Przypisz dostęp do seniora
+      // 3. Przypisz dostęp do seniora (z poziomami uprawnień)
       const { error: accessErr } = await supabase.from("family_access").insert({
         senior_id: seniorId,
         user_id: signUpData.user.id,
         relacja: v.relacja.trim(),
-      });
+        dostep_opiekunczy: v.dostep_opiekunczy,
+        dostep_finansowy: v.dostep_finansowy,
+      } as never);
       if (accessErr) throw accessErr;
     },
     onSuccess: (_data, v) => {
@@ -1745,6 +1886,21 @@ function InviteFamilyDialog({
                 <FormMessage />
               </FormItem>
             )} />
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-xs font-medium text-muted-foreground">Poziom dostępu</p>
+              <FormField control={form.control} name="dostep_opiekunczy" render={({ field }) => (
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" className="mt-0.5" checked={field.value} onChange={(e) => field.onChange(e.target.checked)} />
+                  <span><strong>Dostęp opiekuńczy</strong> — raporty z wizyt, parametry życiowe, kalendarz</span>
+                </label>
+              )} />
+              <FormField control={form.control} name="dostep_finansowy" render={({ field }) => (
+                <label className="flex items-start gap-2 text-sm">
+                  <input type="checkbox" className="mt-0.5" checked={field.value} onChange={(e) => field.onChange(e.target.checked)} />
+                  <span><strong>Dostęp finansowy</strong> — dokumenty (w tym faktury), saldo godzin i stawka</span>
+                </label>
+              )} />
+            </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={onClose} disabled={mut.isPending}>
                 Anuluj

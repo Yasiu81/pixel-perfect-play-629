@@ -7,9 +7,11 @@ import { z } from "zod";
 import { toast } from "sonner";
 import {
   Plus, Loader2, X, Phone, MapPin, Award,
-  Calendar, ChevronRight, AlertTriangle, CheckCircle2,
-  Users, Pencil, Package, RotateCcw, ArrowDownToLine,
+  Calendar, ChevronLeft, ChevronRight, AlertTriangle, CheckCircle2,
+  Users, Pencil, Package, RotateCcw, ArrowDownToLine, Search,
+  Banknote, Receipt, Camera,
 } from "lucide-react";
+import { CaregiverAvatar } from "@/components/CaregiverAvatar";
 
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -43,10 +45,14 @@ type Caregiver = {
   email: string | null;
   telefon: string | null;
   dzielnice: string[] | null;
+  umiejetnosci: string[] | null;
   rola: string | null;
   szkolenie_data: string | null;
   szkolenie_wazne_do: string | null;
   uwagi: string | null;
+  stawka_h: number | null;
+  stawka_vat: number | null;
+  avatar_path: string | null;
 };
 
 type Training = {
@@ -66,7 +72,10 @@ const profileSchema = z.object({
   telefon: z.string().trim().max(20).optional().or(z.literal("")),
   rola: z.string().min(1, "Wymagane"),
   dzielnice: z.string().trim().optional().or(z.literal("")),
+  umiejetnosci: z.string().trim().optional().or(z.literal("")),
   uwagi: z.string().trim().max(500).optional().or(z.literal("")),
+  stawka_h: z.string().trim().optional().or(z.literal("")),
+  stawka_vat: z.string().trim().optional().or(z.literal("")),
 });
 
 const trainingSchema = z.object({
@@ -111,13 +120,60 @@ function OpiekunowiePage() {
       if (ids.length === 0) return [];
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, imie, nazwisko, email, telefon, dzielnice, rola, szkolenie_data, szkolenie_wazne_do, uwagi")
+        .select("id, imie, nazwisko, email, telefon, dzielnice, umiejetnosci, rola, szkolenie_data, szkolenie_wazne_do, uwagi, stawka_h, stawka_vat, avatar_path")
         .in("id", ids)
         .order("nazwisko");
       if (error) throw error;
-      return (data ?? []) as Caregiver[];
+      return (data ?? []) as unknown as Caregiver[];
     },
   });
+
+  const { data: allTrainings } = useQuery({
+    queryKey: ["caregiver-trainings-all"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("caregiver_trainings")
+        .select("caregiver_id, nazwa");
+      if (error) throw error;
+      return (data ?? []) as unknown as { caregiver_id: string; nazwa: string }[];
+    },
+  });
+
+  const trainingsByCaregiver = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    (allTrainings ?? []).forEach((t) => {
+      if (!m[t.caregiver_id]) m[t.caregiver_id] = [];
+      m[t.caregiver_id].push(t.nazwa);
+    });
+    return m;
+  }, [allTrainings]);
+
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const searchSuggestions = useMemo(() => {
+    const set = new Set<string>();
+    (caregivers ?? []).forEach((c) => (c.umiejetnosci ?? []).forEach((s) => set.add(s)));
+    (allTrainings ?? []).forEach((t) => set.add(t.nazwa));
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "pl"));
+  }, [caregivers, allTrainings]);
+
+  const filteredCaregivers = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return caregivers ?? [];
+    return (caregivers ?? []).filter((c) => {
+      const haystack = [
+        c.imie, c.nazwisko, c.rola, c.uwagi,
+        ...(c.dzielnice ?? []),
+        ...(c.umiejetnosci ?? []),
+        ...(trainingsByCaregiver[c.id] ?? []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [caregivers, searchQuery, trainingsByCaregiver]);
+
 
   const { data: seniors } = useQuery({
     queryKey: ["seniors-per-caregiver"],
@@ -188,7 +244,42 @@ function OpiekunowiePage() {
 
       <div className="flex gap-6">
         {/* Lista opiekunów */}
-        <div className="w-72 flex-shrink-0 space-y-2">
+        <div className="w-72 flex-shrink-0 space-y-3">
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Szukaj: umiejętność, szkolenie, dzielnica..."
+                className="pl-8"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            {searchSuggestions.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {searchSuggestions.slice(0, 8).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSearchQuery(s)}
+                    className={`rounded-full border px-2 py-0.5 text-xs transition-colors ${
+                      searchQuery === s ? "border-primary bg-primary/10 text-primary" : "hover:bg-muted"
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           {isLoading ? (
             Array.from({ length: 3 }).map((_, i) => (
               <Skeleton key={i} className="h-20 w-full rounded-xl" />
@@ -198,8 +289,12 @@ function OpiekunowiePage() {
               Brak opiekunów.<br />
               Kliknij <strong>"Dodaj opiekuna"</strong> aby utworzyć pierwsze konto.
             </div>
+          ) : filteredCaregivers.length === 0 ? (
+            <div className="rounded-xl border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
+              Brak opiekunów pasujących do „{searchQuery}".
+            </div>
           ) : (
-            caregivers.map((c) => {
+            filteredCaregivers.map((c) => {
               const st = c.szkolenie_wazne_do
                 ? trainingStatus(c.szkolenie_wazne_do)
                 : null;
@@ -217,7 +312,8 @@ function OpiekunowiePage() {
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
+                    <CaregiverAvatar avatarPath={c.avatar_path} imie={c.imie} nazwisko={c.nazwisko} className="h-9 w-9 flex-shrink-0" />
+                    <div className="min-w-0 flex-1">
                       <div className="font-semibold truncate">
                         {c.nazwisko} {c.imie}
                       </div>
@@ -246,9 +342,7 @@ function OpiekunowiePage() {
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary font-semibold">
-                      {selected.imie[0]}{selected.nazwisko[0]}
-                    </div>
+                    <CaregiverAvatarUpload caregiver={selected} />
                     <div>
                       <div className="font-semibold text-lg">
                         {selected.imie} {selected.nazwisko}
@@ -292,6 +386,16 @@ function OpiekunowiePage() {
                   {selected.uwagi}
                 </div>
               )}
+
+              {selected.umiejetnosci && selected.umiejetnosci.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {selected.umiejetnosci.map((u) => (
+                    <Badge key={u} variant="secondary" className="text-xs">
+                      <Award className="mr-1 h-3 w-3" />{u}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Podopieczni */}
@@ -312,6 +416,9 @@ function OpiekunowiePage() {
                 </div>
               )}
             </div>
+
+            {/* Rozliczenie kadrowo-księgowe */}
+            <PayrollPanel caregiverId={selected.id} stawkaH={selected.stawka_h} stawkaVat={selected.stawka_vat} />
 
             {/* Szkolenia */}
             <TrainingsPanel caregiverId={selected.id} />
@@ -338,6 +445,265 @@ function OpiekunowiePage() {
           open={addOpen}
           onClose={() => setAddOpen(false)}
         />
+      )}
+    </div>
+  );
+}
+
+// ─── Avatar opiekuna (upload zdjęcia z identyfikatora) ──────────────────────
+
+function CaregiverAvatarUpload({ caregiver }: { caregiver: Caregiver }) {
+  const qc = useQueryClient();
+  const [uploading, setUploading] = useState(false);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop() || "jpg";
+      const path = `${caregiver.id}/${Date.now()}.${ext}`;
+      const { error: uploadErr } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
+      if (uploadErr) throw uploadErr;
+      const { error: dbErr } = await supabase.from("profiles").update({ avatar_path: path } as never).eq("id", caregiver.id);
+      if (dbErr) throw dbErr;
+      toast.success("Zdjęcie zaktualizowane");
+      qc.invalidateQueries({ queryKey: ["caregivers-full"] });
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  return (
+    <label className="group relative inline-block cursor-pointer rounded-full" title="Kliknij, aby zmienić zdjęcie">
+      <CaregiverAvatar avatarPath={caregiver.avatar_path} imie={caregiver.imie} nazwisko={caregiver.nazwisko} className="h-14 w-14" />
+      <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 text-transparent transition-colors group-hover:bg-black/40 group-hover:text-white">
+        {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+      </span>
+      <input type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
+    </label>
+  );
+}
+
+
+
+type CaregiverInvoice = {
+  id: string;
+  caregiver_id: string;
+  month: string;
+  hours: number;
+  stawka_h: number | null;
+  vat_rate: number | null;
+  kwota_netto: number | null;
+  kwota_brutto: number | null;
+  file_path: string | null;
+  file_name: string | null;
+  status: string;
+  notes: string | null;
+};
+
+const INVOICE_STATUS_LABEL: Record<string, string> = {
+  oczekuje: "Oczekuje",
+  zaakceptowana: "Zaakceptowana",
+  zaplacona: "Zapłacona",
+};
+const INVOICE_STATUS_TONE: Record<string, string> = {
+  oczekuje: "bg-amber-500/15 text-amber-700",
+  zaakceptowana: "bg-sky-500/15 text-sky-700",
+  zaplacona: "bg-emerald-500/15 text-emerald-700",
+};
+
+function PayrollPanel({
+  caregiverId, stawkaH, stawkaVat,
+}: { caregiverId: string; stawkaH: number | null; stawkaVat: number | null }) {
+  const qc = useQueryClient();
+  const today = new Date();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const [uploading, setUploading] = useState(false);
+
+  const monthStart = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-01`;
+  const monthLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
+  const startISO = new Date(viewYear, viewMonth, 1).toISOString();
+  const endISO = new Date(viewYear, viewMonth + 1, 0, 23, 59, 59).toISOString();
+
+  const { data: hoursWorked, isLoading: loadingHours } = useQuery({
+    queryKey: ["caregiver-hours-month", caregiverId, viewYear, viewMonth],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("visits")
+        .select("hours_billed, status")
+        .eq("caregiver_id", caregiverId)
+        .eq("status", "completed")
+        .gte("planned_start", startISO)
+        .lte("planned_start", endISO);
+      if (error) throw error;
+      return (data ?? []).reduce((sum, v) => sum + (v.hours_billed ?? 0), 0);
+    },
+  });
+
+  const { data: invoice, isLoading: loadingInvoice } = useQuery({
+    queryKey: ["caregiver-invoice-month", caregiverId, viewYear, viewMonth],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("caregiver_invoices")
+        .select("id, caregiver_id, month, hours, stawka_h, vat_rate, kwota_netto, kwota_brutto, file_path, file_name, status, notes")
+        .eq("caregiver_id", caregiverId)
+        .eq("month", monthStart)
+        .maybeSingle();
+      if (error) throw error;
+      return data as unknown as CaregiverInvoice | null;
+    },
+  });
+
+  const hours = hoursWorked ?? 0;
+  const kwotaNetto = Math.round(hours * (stawkaH ?? 0) * 100) / 100;
+  const kwotaBrutto = stawkaVat ? Math.round(kwotaNetto * (1 + stawkaVat / 100) * 100) / 100 : kwotaNetto;
+
+  const upsertMut = useMutation({
+    mutationFn: async (patch: Partial<{ status: string; file_path: string; file_name: string }>) => {
+      const { error } = await supabase.from("caregiver_invoices").upsert(
+        {
+          caregiver_id: caregiverId,
+          month: monthStart,
+          hours,
+          stawka_h: stawkaH,
+          vat_rate: stawkaVat,
+          kwota_netto: kwotaNetto,
+          kwota_brutto: kwotaBrutto,
+          status: invoice?.status ?? "oczekuje",
+          ...patch,
+        } as never,
+        { onConflict: "caregiver_id,month" },
+      );
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["caregiver-invoice-month", caregiverId, viewYear, viewMonth] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const path = `caregiver-invoices/${caregiverId}/${monthStart}-${Date.now()}-${file.name}`;
+      const { error: uploadErr } = await supabase.storage.from("documents").upload(path, file);
+      if (uploadErr) throw uploadErr;
+      await upsertMut.mutateAsync({ file_path: path, file_name: file.name });
+      toast.success("Faktura opiekuna dołączona");
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!invoice?.file_path) return;
+    const { data } = await supabase.storage.from("documents").createSignedUrl(invoice.file_path, 60);
+    if (data?.signedUrl) {
+      const a = document.createElement("a");
+      a.href = data.signedUrl;
+      a.download = invoice.file_name ?? "faktura";
+      a.click();
+    }
+  };
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewYear((y) => y - 1); setViewMonth(11); } else setViewMonth((m) => m - 1);
+  };
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewYear((y) => y + 1); setViewMonth(0); } else setViewMonth((m) => m + 1);
+  };
+
+  return (
+    <div className="rounded-xl border bg-card p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="flex items-center gap-2 text-sm font-semibold">
+          <Banknote className="h-4 w-4" /> Rozliczenie kadrowo-księgowe
+        </h3>
+        <div className="flex items-center gap-1">
+          <Button size="icon" variant="outline" className="h-7 w-7" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
+          <span className="text-xs font-medium capitalize w-28 text-center">{monthLabel}</span>
+          <Button size="icon" variant="outline" className="h-7 w-7" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
+        </div>
+      </div>
+
+      {!stawkaH ? (
+        <p className="text-sm text-muted-foreground">
+          Ustaw stawkę godzinową opiekuna (przycisk „Edytuj" powyżej), aby zobaczyć wyliczenia.
+        </p>
+      ) : loadingHours || loadingInvoice ? (
+        <Skeleton className="h-20 w-full" />
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-lg bg-muted/40 p-3">
+              <div className="text-xs text-muted-foreground">Godziny zrealizowane</div>
+              <div className="text-lg font-semibold">{hours} h</div>
+            </div>
+            <div className="rounded-lg bg-muted/40 p-3">
+              <div className="text-xs text-muted-foreground">Stawka / h</div>
+              <div className="text-lg font-semibold">{stawkaH.toFixed(2)} zł</div>
+            </div>
+            <div className="rounded-lg bg-muted/40 p-3">
+              <div className="text-xs text-muted-foreground">Kwota netto</div>
+              <div className="text-lg font-semibold">{kwotaNetto.toFixed(2)} zł</div>
+            </div>
+            <div className="rounded-lg bg-primary/10 p-3">
+              <div className="text-xs text-muted-foreground">
+                Kwota brutto{stawkaVat ? ` (VAT ${stawkaVat}%)` : " (bez VAT)"}
+              </div>
+              <div className="text-lg font-semibold text-primary">{kwotaBrutto.toFixed(2)} zł</div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+            <div className="flex items-center gap-2">
+              <Receipt className="h-4 w-4 text-muted-foreground" />
+              {invoice?.file_path ? (
+                <button onClick={handleDownload} className="text-sm font-medium text-primary hover:underline">
+                  {invoice.file_name ?? "Faktura"}
+                </button>
+              ) : (
+                <span className="text-sm text-muted-foreground">Brak dołączonej faktury za ten miesiąc</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Select
+                value={invoice?.status ?? "oczekuje"}
+                onValueChange={(v) => upsertMut.mutate({ status: v })}
+              >
+                <SelectTrigger className="h-8 w-[150px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(INVOICE_STATUS_LABEL).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {invoice?.status && (
+                <Badge variant="secondary" className={`text-xs ${INVOICE_STATUS_TONE[invoice.status] ?? ""}`}>
+                  {INVOICE_STATUS_LABEL[invoice.status] ?? invoice.status}
+                </Badge>
+              )}
+              <label className={`cursor-pointer inline-flex items-center gap-1.5 rounded-md border bg-card px-2.5 py-1.5 text-xs font-medium hover:bg-muted transition-colors ${uploading ? "opacity-50 cursor-not-allowed" : ""}`}>
+                {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowDownToLine className="h-3.5 w-3.5 rotate-180" />}
+                {invoice?.file_path ? "Podmień fakturę" : "Dołącz fakturę (KSeF)"}
+                <input type="file" className="hidden" onChange={handleUpload} disabled={uploading} accept=".pdf,.jpg,.jpeg,.png,.xml" />
+              </label>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Faktury wystawiane są zewnętrznie (obowiązek KSeF) — tu tylko dołączasz plik i śledzisz status wobec wyliczonej kwoty.
+          </p>
+        </div>
       )}
     </div>
   );
@@ -1001,7 +1367,10 @@ function EditProfileDialog({
       telefon: caregiver.telefon ?? "",
       rola: caregiver.rola ?? "opiekun",
       dzielnice: caregiver.dzielnice?.join(", ") ?? "",
+      umiejetnosci: caregiver.umiejetnosci?.join(", ") ?? "",
       uwagi: caregiver.uwagi ?? "",
+      stawka_h: caregiver.stawka_h != null ? String(caregiver.stawka_h) : "",
+      stawka_vat: caregiver.stawka_vat != null ? String(caregiver.stawka_vat) : "",
     },
   });
 
@@ -1010,14 +1379,22 @@ function EditProfileDialog({
       const dzielnice = v.dzielnice
         ? v.dzielnice.split(",").map((d) => d.trim()).filter(Boolean)
         : [];
+      const umiejetnosci = v.umiejetnosci
+        ? v.umiejetnosci.split(",").map((d) => d.trim()).filter(Boolean)
+        : [];
+      const stawka_h = v.stawka_h ? Number(v.stawka_h.replace(",", ".")) : null;
+      const stawka_vat = v.stawka_vat ? Number(v.stawka_vat.replace(",", ".")) : null;
       const { error } = await supabase.from("profiles").update({
         imie: v.imie.trim(),
         nazwisko: v.nazwisko.trim(),
         telefon: v.telefon?.trim() || null,
         rola: v.rola,
         dzielnice: dzielnice.length > 0 ? dzielnice : null,
+        umiejetnosci,
         uwagi: v.uwagi?.trim() || null,
-      }).eq("id", caregiver.id);
+        stawka_h,
+        stawka_vat,
+      } as never).eq("id", caregiver.id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -1073,6 +1450,36 @@ function EditProfileDialog({
                 <FormMessage />
               </FormItem>
             )} />
+            <FormField control={form.control} name="umiejetnosci" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Umiejętności</FormLabel>
+                <FormControl>
+                  <Input placeholder="np. podawanie leków, j. angielski, prawo jazdy" {...field} value={field.value ?? ""} />
+                </FormControl>
+                <p className="text-xs text-muted-foreground">Rozdziel przecinkami — widoczne w wyszukiwarce opiekunów</p>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="stawka_h" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Stawka za godzinę (zł)</FormLabel>
+                  <FormControl>
+                    <Input inputMode="decimal" placeholder="np. 32.50" {...field} value={field.value ?? ""} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="stawka_vat" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Stawka VAT (%)</FormLabel>
+                  <FormControl>
+                    <Input inputMode="decimal" placeholder="np. 23 (puste = nie dotyczy)" {...field} value={field.value ?? ""} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
             <FormField control={form.control} name="uwagi" render={({ field }) => (
               <FormItem><FormLabel>Uwagi</FormLabel>
                 <FormControl>
