@@ -31,6 +31,8 @@ import {
   CloudOff,
   MessageCircle,
   Send,
+  KeyRound,
+  ChevronLeft,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -79,6 +81,7 @@ type Visit = {
     lng: number | null;
     nfc_uid: string | null;
     plan_wsparcia: unknown;
+    notatka_techniczna: string | null;
   } | null;
 };
 
@@ -410,7 +413,7 @@ function OpiekunApp() {
             onBack={() => setActiveVisitId(null)}
           />
         ) : (
-          <DayScreen onOpenVisit={setActiveVisitId} />
+          <ScheduleScreen onOpenVisit={setActiveVisitId} />
         )}
       </main>
     </div>
@@ -514,7 +517,25 @@ function SosButton() {
 
 // ─── Ekran: Mój dzień ────────────────────────────────────────────────────────
 
-function DayScreen({ onOpenVisit }: { onOpenVisit: (id: string) => void }) {
+const DAYS_PL_SHORT = ["Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"];
+const MONTHS_PL = [
+  "Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec",
+  "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień",
+];
+
+function sameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+function startOfWeekMon(d: Date) {
+  const day = d.getDay();
+  const diff = day === 0 ? 6 : day - 1;
+  const r = new Date(d);
+  r.setDate(d.getDate() - diff);
+  r.setHours(0, 0, 0, 0);
+  return r;
+}
+
+function ScheduleScreen({ onOpenVisit }: { onOpenVisit: (id: string) => void }) {
   const { data: user } = useQuery({
     queryKey: ["me"],
     queryFn: async () => {
@@ -523,7 +544,6 @@ function DayScreen({ onOpenVisit }: { onOpenVisit: (id: string) => void }) {
     },
   });
 
-  // Sprawdź spóźnione wizyty przy każdym wejściu na ekran
   useEffect(() => {
     (async () => {
       try {
@@ -534,20 +554,19 @@ function DayScreen({ onOpenVisit }: { onOpenVisit: (id: string) => void }) {
     })();
   }, []);
 
+  const [viewMode, setViewMode] = useState<"day" | "week" | "month">("day");
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
   const today = new Date();
-  const startOfDay = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate(),
-  ).toISOString();
-  const endOfDay = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate() + 1,
-  ).toISOString();
+
+  // Zawsze pobieramy zakres całego widocznego miesiąca — pokrywa to też
+  // widok dnia/tygodnia bez dodatkowych zapytań przy przełączaniu.
+  const monthStart = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+  const monthEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1);
+  const rangeStartISO = monthStart.toISOString();
+  const rangeEndISO = monthEnd.toISOString();
 
   const { data: visits, isLoading } = useQuery({
-    queryKey: ["opiekun-visits", user?.id, startOfDay],
+    queryKey: ["opiekun-visits", user?.id, monthStart.toISOString()],
     enabled: !!user?.id,
     refetchInterval: 30_000,
     queryFn: async () => {
@@ -557,34 +576,81 @@ function DayScreen({ onOpenVisit }: { onOpenVisit: (id: string) => void }) {
           `id, planned_start, planned_end, status, actual_start, actual_end,
            hours_billed, nfc_verified_entry, nfc_verified_exit,
            gps_verified_entry, gps_verified_exit, notes, senior_id, caregiver_id,
-           senior:seniors(imie, nazwisko, adres, telefon, lat, lng, nfc_uid, plan_wsparcia)`,
+           senior:seniors(imie, nazwisko, adres, telefon, lat, lng, nfc_uid, plan_wsparcia, notatka_techniczna)`,
         )
         .eq("caregiver_id", user!.id)
-        .gte("planned_start", startOfDay)
-        .lt("planned_start", endOfDay)
+        .gte("planned_start", rangeStartISO)
+        .lt("planned_start", rangeEndISO)
         .order("planned_start");
       if (error) throw error;
       return (data ?? []) as unknown as Visit[];
     },
   });
 
-  const fmtTime = (iso: string) =>
-    new Date(iso).toLocaleTimeString("pl-PL", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+  const visitsByDay = new Map<string, Visit[]>();
+  for (const v of visits ?? []) {
+    const key = new Date(v.planned_start).toDateString();
+    if (!visitsByDay.has(key)) visitsByDay.set(key, []);
+    visitsByDay.get(key)!.push(v);
+  }
+  const visitsForSelectedDay = visitsByDay.get(selectedDate.toDateString()) ?? [];
+
+  const goPrev = () => {
+    const d = new Date(selectedDate);
+    if (viewMode === "day") d.setDate(d.getDate() - 1);
+    else if (viewMode === "week") d.setDate(d.getDate() - 7);
+    else d.setMonth(d.getMonth() - 1);
+    setSelectedDate(d);
+  };
+  const goNext = () => {
+    const d = new Date(selectedDate);
+    if (viewMode === "day") d.setDate(d.getDate() + 1);
+    else if (viewMode === "week") d.setDate(d.getDate() + 7);
+    else d.setMonth(d.getMonth() + 1);
+    setSelectedDate(d);
+  };
+  const goToday = () => setSelectedDate(new Date());
+
+  const headerLabel =
+    viewMode === "month"
+      ? `${MONTHS_PL[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`
+      : selectedDate.toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
       <div>
-        <h1 className="text-xl font-semibold">Mój dzień</h1>
-        <p className="text-sm text-muted-foreground">
-          {today.toLocaleDateString("pl-PL", {
-            weekday: "long",
-            day: "numeric",
-            month: "long",
-          })}
-        </p>
+        <h1 className="text-xl font-semibold">Mój grafik</h1>
+      </div>
+
+      {/* Przełącznik widoku */}
+      <div className="flex rounded-lg border bg-muted/30 p-1">
+        {([
+          { key: "day", label: "Dzień" },
+          { key: "week", label: "Tydzień" },
+          { key: "month", label: "Miesiąc" },
+        ] as const).map((opt) => (
+          <button
+            key={opt.key}
+            onClick={() => setViewMode(opt.key)}
+            className={`flex-1 rounded-md py-1.5 text-sm font-medium transition-colors ${
+              viewMode === opt.key ? "bg-card shadow-sm text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Nawigacja okresu */}
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" size="sm" onClick={goPrev}><ChevronLeft className="h-4 w-4" /></Button>
+        <div className="text-center">
+          <div className="text-sm font-medium capitalize">{headerLabel}</div>
+          {!sameDay(selectedDate, today) && (
+            <button onClick={goToday} className="text-xs text-primary hover:underline">Dziś</button>
+          )}
+        </div>
+        <Button variant="ghost" size="sm" onClick={goNext}><ChevronRight className="h-4 w-4" /></Button>
       </div>
 
       {isLoading && (
@@ -594,60 +660,148 @@ function DayScreen({ onOpenVisit }: { onOpenVisit: (id: string) => void }) {
         </div>
       )}
 
-      {!isLoading && (!visits || visits.length === 0) && (
-        <div className="rounded-xl border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
-          Brak zaplanowanych wizyt na dziś.
+      {/* Widok miesiąca — siatka z kropkami */}
+      {viewMode === "month" && !isLoading && (
+        <div className="rounded-xl border bg-card p-2">
+          <div className="grid grid-cols-7 gap-1 mb-1">
+            {DAYS_PL_SHORT.map((d) => (
+              <div key={d} className="py-1 text-center text-[11px] font-medium text-muted-foreground">{d}</div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {(() => {
+              const firstOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+              const firstWeekday = firstOfMonth.getDay() === 0 ? 6 : firstOfMonth.getDay() - 1;
+              const daysInMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0).getDate();
+              const cells = [];
+              for (let i = 0; i < firstWeekday; i++) cells.push(<div key={`e${i}`} />);
+              for (let day = 1; day <= daysInMonth; day++) {
+                const d = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), day);
+                const count = visitsByDay.get(d.toDateString())?.length ?? 0;
+                const isToday = sameDay(d, today);
+                const isSelected = sameDay(d, selectedDate);
+                cells.push(
+                  <button
+                    key={day}
+                    onClick={() => { setSelectedDate(d); setViewMode("day"); }}
+                    className={`flex aspect-square flex-col items-center justify-center rounded-lg text-xs ${
+                      isSelected ? "bg-primary text-primary-foreground" : isToday ? "bg-muted font-semibold" : "hover:bg-muted/60"
+                    }`}
+                  >
+                    {day}
+                    {count > 0 && (
+                      <span className={`mt-0.5 h-1.5 w-1.5 rounded-full ${isSelected ? "bg-primary-foreground" : "bg-primary"}`} />
+                    )}
+                  </button>,
+                );
+              }
+              return cells;
+            })()}
+          </div>
         </div>
       )}
 
-      <div className="space-y-3">
-        {(visits ?? []).map((v) => {
-          const planTasks: string[] = Array.isArray(v.senior?.plan_wsparcia)
-            ? (v.senior!.plan_wsparcia as unknown[]).map(String).filter(Boolean)
-            : [];
-          return (
-            <button
-              key={v.id}
-              onClick={() => onOpenVisit(v.id)}
-              className="w-full rounded-xl border bg-card p-4 text-left shadow-sm transition-all hover:shadow-md active:scale-[0.98]"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold">
-                    {v.senior?.imie} {v.senior?.nazwisko}
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                    <MapPin className="h-3 w-3 flex-shrink-0" />
-                    <span className="truncate">{v.senior?.adres}</span>
-                  </div>
-                  <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    {fmtTime(v.planned_start)} – {fmtTime(v.planned_end)}
-                  </div>
-                  {planTasks.length > 0 && (
-                    <div className="mt-2 border-t pt-2 space-y-1">
-                      <div className="text-xs font-medium text-muted-foreground">Zaplanowane czynności:</div>
-                      {planTasks.map((t, i) => (
-                        <div key={i} className="flex items-center gap-1.5 text-xs text-foreground">
-                          <div className="h-1.5 w-1.5 rounded-full bg-primary/50 flex-shrink-0" />
-                          {t}
-                        </div>
-                      ))}
-                    </div>
+      {/* Pasek dni tygodnia */}
+      {viewMode === "week" && !isLoading && (
+        <div className="grid grid-cols-7 gap-1">
+          {(() => {
+            const start = startOfWeekMon(selectedDate);
+            return Array.from({ length: 7 }).map((_, i) => {
+              const d = new Date(start);
+              d.setDate(start.getDate() + i);
+              const count = visitsByDay.get(d.toDateString())?.length ?? 0;
+              const isToday = sameDay(d, today);
+              const isSelected = sameDay(d, selectedDate);
+              return (
+                <button
+                  key={i}
+                  onClick={() => setSelectedDate(d)}
+                  className={`flex flex-col items-center rounded-lg py-2 text-xs ${
+                    isSelected ? "bg-primary text-primary-foreground" : isToday ? "bg-muted font-semibold" : "hover:bg-muted/60"
+                  }`}
+                >
+                  <span>{DAYS_PL_SHORT[i]}</span>
+                  <span className="text-sm font-medium">{d.getDate()}</span>
+                  {count > 0 && (
+                    <span className={`mt-0.5 h-1.5 w-1.5 rounded-full ${isSelected ? "bg-primary-foreground" : "bg-primary"}`} />
                   )}
-                </div>
-                <div className="flex flex-col items-end gap-2">
-                  <Badge variant="secondary" className={STATUS_TONE[v.status]}>
-                    {STATUS_LABEL[v.status]}
-                  </Badge>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
+                </button>
+              );
+            });
+          })()}
+        </div>
+      )}
+
+      {/* Lista wizyt wybranego dnia (widoki: dzień / tydzień) */}
+      {(viewMode === "day" || viewMode === "week") && !isLoading && (
+        <>
+          {visitsForSelectedDay.length === 0 ? (
+            <div className="rounded-xl border border-dashed bg-card p-8 text-center text-sm text-muted-foreground">
+              Brak zaplanowanych wizyt na ten dzień.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {visitsForSelectedDay.map((v) => (
+                <VisitCard key={v.id} visit={v} onClick={() => onOpenVisit(v.id)} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
+  );
+}
+
+function VisitCard({ visit: v, onClick }: { visit: Visit; onClick: () => void }) {
+  const fmtTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+  const planTasks: string[] = Array.isArray(v.senior?.plan_wsparcia)
+    ? (v.senior!.plan_wsparcia as unknown[]).map(String).filter(Boolean)
+    : [];
+  return (
+    <button
+      onClick={onClick}
+      className="w-full rounded-xl border bg-card p-4 text-left shadow-sm transition-all hover:shadow-md active:scale-[0.98]"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold">
+            {v.senior?.imie} {v.senior?.nazwisko}
+          </div>
+          <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+            <MapPin className="h-3 w-3 flex-shrink-0" />
+            <span className="truncate">{v.senior?.adres}</span>
+          </div>
+          <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+            <Clock className="h-3 w-3" />
+            {fmtTime(v.planned_start)} – {fmtTime(v.planned_end)}
+          </div>
+          {v.senior?.notatka_techniczna && (
+            <div className="mt-1.5 flex items-start gap-1 rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-900">
+              <KeyRound className="h-3 w-3 mt-0.5 flex-shrink-0" />
+              <span className="line-clamp-2">{v.senior.notatka_techniczna}</span>
+            </div>
+          )}
+          {planTasks.length > 0 && (
+            <div className="mt-2 border-t pt-2 space-y-1">
+              <div className="text-xs font-medium text-muted-foreground">Zaplanowane czynności:</div>
+              {planTasks.map((t, i) => (
+                <div key={i} className="flex items-center gap-1.5 text-xs text-foreground">
+                  <div className="h-1.5 w-1.5 rounded-full bg-primary/50 flex-shrink-0" />
+                  {t}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <Badge variant="secondary" className={STATUS_TONE[v.status]}>
+            {STATUS_LABEL[v.status]}
+          </Badge>
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        </div>
+      </div>
+    </button>
   );
 }
 
@@ -672,7 +826,7 @@ function VisitScreen({
           `id, planned_start, planned_end, status, actual_start, actual_end,
            hours_billed, nfc_verified_entry, nfc_verified_exit,
            gps_verified_entry, gps_verified_exit, notes, senior_id, caregiver_id,
-           senior:seniors(imie, nazwisko, adres, telefon, lat, lng, nfc_uid, plan_wsparcia)`,
+           senior:seniors(imie, nazwisko, adres, telefon, lat, lng, nfc_uid, plan_wsparcia, notatka_techniczna)`,
         )
         .eq("id", visitId)
         .single();
@@ -764,6 +918,19 @@ function VisitScreen({
               </a>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Informacje o dostępie od koordynatora — widoczne PRZED wejściem do mieszkania */}
+      {s?.notatka_techniczna && (
+        <div className="rounded-xl border border-amber-300 bg-amber-500/10 p-4">
+          <div className="mb-1.5 flex items-center gap-2 text-sm font-semibold text-amber-900">
+            <KeyRound className="h-4 w-4 flex-shrink-0" />
+            Informacje o dostępie
+          </div>
+          <p className="whitespace-pre-wrap text-sm text-amber-900">
+            {s.notatka_techniczna}
+          </p>
         </div>
       )}
 
