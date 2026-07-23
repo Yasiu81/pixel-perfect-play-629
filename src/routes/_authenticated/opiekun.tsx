@@ -33,6 +33,7 @@ import {
   Send,
   KeyRound,
   ChevronLeft,
+  Camera,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -616,6 +617,49 @@ function ScheduleScreen({ onOpenVisit }: { onOpenVisit: (id: string) => void }) 
       ? `${MONTHS_PL[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`
       : selectedDate.toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
 
+  // ── Potwierdzenie odczytu grafiku (tylko widoki tydzień/miesiąc) ──
+  const qc = useQueryClient();
+  const periodType: "week" | "month" | null =
+    viewMode === "week" ? "week" : viewMode === "month" ? "month" : null;
+  const periodStartDate =
+    periodType === "week" ? startOfWeekMon(selectedDate)
+    : periodType === "month" ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1)
+    : null;
+  const periodStartKey = periodStartDate
+    ? `${periodStartDate.getFullYear()}-${String(periodStartDate.getMonth() + 1).padStart(2, "0")}-${String(periodStartDate.getDate()).padStart(2, "0")}`
+    : null;
+
+  const { data: ack } = useQuery({
+    queryKey: ["schedule-ack", user?.id, periodType, periodStartKey],
+    enabled: !!user?.id && !!periodType,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("schedule_acknowledgements")
+        .select("id")
+        .eq("caregiver_id", user!.id)
+        .eq("period_type", periodType!)
+        .eq("period_start", periodStartKey!)
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  const ackMut = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("schedule_acknowledgements").insert({
+        caregiver_id: user!.id,
+        period_type: periodType,
+        period_start: periodStartKey,
+      } as never);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Potwierdzono zapoznanie z grafikiem");
+      qc.invalidateQueries({ queryKey: ["schedule-ack"] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4">
       <div>
@@ -652,6 +696,27 @@ function ScheduleScreen({ onOpenVisit }: { onOpenVisit: (id: string) => void }) 
         </div>
         <Button variant="ghost" size="sm" onClick={goNext}><ChevronRight className="h-4 w-4" /></Button>
       </div>
+
+      {/* Potwierdzenie zapoznania z grafikiem — tylko widok tydzień/miesiąc */}
+      {periodType && (
+        ack ? (
+          <div className="flex items-center justify-center gap-1.5 rounded-lg bg-emerald-500/10 py-2 text-xs font-medium text-emerald-700">
+            <CheckSquare className="h-3.5 w-3.5" />
+            Potwierdzono zapoznanie z tym grafikiem
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => ackMut.mutate()}
+            disabled={ackMut.isPending}
+          >
+            {ackMut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Potwierdzam zapoznanie z grafikiem
+          </Button>
+        )
+      )}
 
       {isLoading && (
         <div className="flex items-center gap-2 text-muted-foreground">
@@ -956,6 +1021,11 @@ function VisitScreen({
       {/* Parametry życiowe */}
       {isActive && visit.senior && (
         <VitalsStep visitId={visitId} seniorId={visit.senior_id} />
+      )}
+
+      {/* Dokumentacja foto — bez zapisu w galerii telefonu */}
+      {isActive && (
+        <PhotosStep visitId={visitId} />
       )}
 
       {/* Notatka */}
@@ -1674,6 +1744,111 @@ function VitalsStep({
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Dokumentacja foto (bez zapisu w galerii telefonu) ──────────────────────
+
+type VisitPhoto = { id: string; storage_path: string; created_at: string };
+
+function PhotosStep({ visitId }: { visitId: string }) {
+  const qc = useQueryClient();
+  const [uploading, setUploading] = useState(false);
+  const [urls, setUrls] = useState<Record<string, string>>({});
+
+  const { data: photos, isLoading } = useQuery({
+    queryKey: ["visit-photos", visitId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("visit_photos")
+        .select("id, storage_path, created_at")
+        .eq("visit_id", visitId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as unknown as VisitPhoto[];
+    },
+  });
+
+  // Podpisane URL-e do podglądu miniaturek (bucket jest prywatny)
+  useEffect(() => {
+    (async () => {
+      const missing = (photos ?? []).filter((p) => !urls[p.id]);
+      if (missing.length === 0) return;
+      const next: Record<string, string> = {};
+      for (const p of missing) {
+        const { data } = await supabase.storage.from("visit-photos").createSignedUrl(p.storage_path, 300);
+        if (data?.signedUrl) next[p.id] = data.signedUrl;
+      }
+      if (Object.keys(next).length > 0) setUrls((prev) => ({ ...prev, ...next }));
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photos]);
+
+  const handleCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const path = `${visitId}/${Date.now()}-${file.name}`;
+      const { error: uploadErr } = await supabase.storage.from("visit-photos").upload(path, file);
+      if (uploadErr) throw uploadErr;
+      const { error: dbErr } = await supabase.from("visit_photos").insert({
+        visit_id: visitId,
+        storage_path: path,
+      } as never);
+      if (dbErr) throw dbErr;
+      qc.invalidateQueries({ queryKey: ["visit-photos", visitId] });
+      toast.success("Zdjęcie dodane");
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-sm font-semibold">
+          <Camera className="h-4 w-4" /> Dokumentacja foto
+        </h3>
+        <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground ${uploading ? "opacity-50" : ""}`}>
+          {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+          Zrób zdjęcie
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handleCapture}
+            disabled={uploading}
+          />
+        </label>
+      </div>
+
+      {isLoading ? (
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      ) : (photos ?? []).length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Brak zdjęć. Zdjęcia trafiają bezpośrednio do systemu, nie zapisują się w galerii telefonu.
+        </p>
+      ) : (
+        <div className="grid grid-cols-3 gap-2">
+          {(photos ?? []).map((p) => (
+            <div key={p.id} className="aspect-square overflow-hidden rounded-lg border bg-muted">
+              {urls[p.id] ? (
+                <img src={urls[p.id]} alt="Dokumentacja z wizyty" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

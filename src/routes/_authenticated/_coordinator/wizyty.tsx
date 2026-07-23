@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Truck,
   Lock,
+  AlertTriangle,
 } from "lucide-react";
 import { format, addDays, startOfDay, endOfDay } from "date-fns";
 import { pl } from "date-fns/locale";
@@ -614,6 +615,73 @@ function WizytyPage() {
       )
     : [];
 
+  const watchedCaregiverId = form.watch("caregiver_id");
+  const watchedStart = form.watch("planned_start");
+  const watchedEnd = form.watch("planned_end");
+  const hasRealCaregiver = !!watchedCaregiverId && watchedCaregiverId !== NO_CAREGIVER;
+
+  // Okno ±8 dni wokół planowanej wizyty — wystarcza do sprawdzenia odpoczynku
+  // dobowego i sumy godzin w tygodniu (ISO), bez pobierania całej historii opiekuna.
+  const scheduleCheckWindowStart = watchedStart ? addDays(new Date(watchedStart), -8).toISOString() : null;
+  const scheduleCheckWindowEnd = watchedStart ? addDays(new Date(watchedStart), 8).toISOString() : null;
+
+  const { data: caregiverOtherVisits } = useQuery({
+    queryKey: ["caregiver-schedule-check", watchedCaregiverId, scheduleCheckWindowStart],
+    enabled: hasRealCaregiver && !!scheduleCheckWindowStart,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("visits")
+        .select("id, planned_start, planned_end, hours_billed")
+        .eq("caregiver_id", watchedCaregiverId!)
+        .gte("planned_start", scheduleCheckWindowStart!)
+        .lte("planned_start", scheduleCheckWindowEnd!);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const scheduleWarnings = useMemo(() => {
+    if (!hasRealCaregiver || !watchedStart || !watchedEnd) return [];
+    const warnings: string[] = [];
+    const newStart = new Date(watchedStart);
+    const newEnd = new Date(watchedEnd);
+    if (isNaN(newStart.getTime()) || isNaN(newEnd.getTime())) return [];
+
+    const others = (caregiverOtherVisits ?? []).map((v) => ({
+      start: new Date(v.planned_start),
+      end: new Date(v.planned_end),
+    }));
+
+    // Odpoczynek dobowy — Kodeks pracy wymaga min. 11h nieprzerwanego odpoczynku
+    for (const o of others) {
+      const gapAfterOther = (newStart.getTime() - o.end.getTime()) / 3_600_000;
+      const gapBeforeOther = (o.start.getTime() - newEnd.getTime()) / 3_600_000;
+      if (gapAfterOther >= 0 && gapAfterOther < 11) {
+        warnings.push(`Za mało odpoczynku przed tą wizytą — tylko ${gapAfterOther.toFixed(1)}h od poprzedniej (wymagane min. 11h).`);
+      }
+      if (gapBeforeOther >= 0 && gapBeforeOther < 11) {
+        warnings.push(`Za mało odpoczynku po tej wizycie — tylko ${gapBeforeOther.toFixed(1)}h do kolejnej (wymagane min. 11h).`);
+      }
+    }
+
+    // Suma godzin w tygodniu (Pon–Nd) — orientacyjny limit 48h/tydzień
+    const dayOfWeek = newStart.getDay() === 0 ? 6 : newStart.getDay() - 1;
+    const weekStart = new Date(newStart);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - dayOfWeek);
+    const weekEnd = addDays(weekStart, 7);
+    const thisWeekHours = others
+      .filter((o) => o.start >= weekStart && o.start < weekEnd)
+      .reduce((sum, o) => sum + (o.end.getTime() - o.start.getTime()) / 3_600_000, 0);
+    const newHours = (newEnd.getTime() - newStart.getTime()) / 3_600_000;
+    const totalWeekHours = thisWeekHours + newHours;
+    if (totalWeekHours > 48) {
+      warnings.push(`Suma godzin w tym tygodniu wyniesie ok. ${totalWeekHours.toFixed(1)}h — powyżej orientacyjnego limitu 48h/tydzień.`);
+    }
+
+    return warnings;
+  }, [hasRealCaregiver, watchedStart, watchedEnd, caregiverOtherVisits]);
+
   const createMut = useMutation({
     mutationFn: async (v: VisitForm) => {
       const { data: visit, error } = await supabase
@@ -1056,6 +1124,18 @@ function WizytyPage() {
                     </FormItem>
                   )}
                 />
+
+                {scheduleWarnings.length > 0 && (
+                  <div className="rounded-lg border border-amber-300 bg-amber-500/10 p-3 text-xs text-amber-800">
+                    <div className="mb-1 flex items-center gap-1.5 font-medium">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      Grafik może naruszać Kodeks pracy — to tylko ostrzeżenie, nadal można zapisać:
+                    </div>
+                    <ul className="list-disc space-y-0.5 pl-5">
+                      {scheduleWarnings.map((w, i) => <li key={i}>{w}</li>)}
+                    </ul>
+                  </div>
+                )}
 
                 <DialogFooter>
                   <Button

@@ -420,6 +420,9 @@ function OpiekunowiePage() {
             {/* Rozliczenie kadrowo-księgowe */}
             <PayrollPanel caregiverId={selected.id} stawkaH={selected.stawka_h} stawkaVat={selected.stawka_vat} />
 
+            {/* Potwierdzenia zapoznania z grafikiem */}
+            <ScheduleAckPanel caregiverId={selected.id} />
+
             {/* Szkolenia */}
             <TrainingsPanel caregiverId={selected.id} />
             <EquipmentPanel caregiverId={selected.id} />
@@ -703,6 +706,52 @@ function PayrollPanel({
           <p className="text-xs text-muted-foreground">
             Faktury wystawiane są zewnętrznie (obowiązek KSeF) — tu tylko dołączasz plik i śledzisz status wobec wyliczonej kwoty.
           </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Potwierdzenia zapoznania z grafikiem ───────────────────────────────────
+
+type ScheduleAck = { id: string; period_type: "week" | "month"; period_start: string; acknowledged_at: string };
+
+function ScheduleAckPanel({ caregiverId }: { caregiverId: string }) {
+  const { data: acks, isLoading } = useQuery({
+    queryKey: ["schedule-acks-coordinator", caregiverId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("schedule_acknowledgements")
+        .select("id, period_type, period_start, acknowledged_at")
+        .eq("caregiver_id", caregiverId)
+        .order("period_start", { ascending: false })
+        .limit(8);
+      if (error) throw error;
+      return (data ?? []) as unknown as ScheduleAck[];
+    },
+  });
+
+  return (
+    <div className="rounded-xl border bg-card p-5">
+      <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+        <CheckCircle2 className="h-4 w-4" /> Potwierdzenia zapoznania z grafikiem
+      </h3>
+      {isLoading ? (
+        <Skeleton className="h-10 w-full" />
+      ) : !acks || acks.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Opiekun nie potwierdził jeszcze żadnego okresu.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {acks.map((a) => (
+            <div key={a.id} className="flex items-center justify-between text-xs">
+              <span>
+                {a.period_type === "week" ? "Tydzień od" : "Miesiąc"} {new Date(a.period_start).toLocaleDateString("pl-PL")}
+              </span>
+              <span className="text-muted-foreground">
+                potwierdzono {new Date(a.acknowledged_at).toLocaleString("pl-PL")}
+              </span>
+            </div>
+          ))}
         </div>
       )}
     </div>
