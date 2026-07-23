@@ -2,14 +2,19 @@ import { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-const IDLE_MS = 3 * 60 * 1000; // 3 minuty
 const EVENTS = ["mousemove", "mousedown", "keydown", "touchstart", "scroll", "wheel"] as const;
 
 /**
- * Wylogowuje użytkownika po 3 minutach bezczynności.
- * RODO: ogranicza ryzyko dostępu osób trzecich do otwartej sesji koordynatora/opiekuna.
+ * Wylogowuje użytkownika po określonym czasie bezczynności.
+ * RODO: ogranicza ryzyko dostępu osób trzecich do otwartej sesji.
+ *
+ * Czas domyślny to 3 minuty (odpowiedni dla panelu koordynatora — komputer
+ * biurowy, dane wrażliwe seniorów). Aplikacja opiekuna w terenie powinna
+ * dostawać dłuższy czas — opiekunka fizycznie zajmuje się seniorem i nie
+ * dotyka telefonu przez kilka-kilkanaście minut, co przy 3-minutowym limicie
+ * powodowało częste, uciążliwe wylogowania w trakcie pracy.
  */
-export function useIdleTimeout(enabled: boolean) {
+export function useIdleTimeout(enabled: boolean, idleMs: number = 3 * 60 * 1000) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -18,7 +23,8 @@ export function useIdleTimeout(enabled: boolean) {
     const logout = async () => {
       try {
         await supabase.auth.signOut();
-        toast.info("Wylogowano automatycznie po 3 minutach bezczynności.");
+        const minutes = Math.round(idleMs / 60_000);
+        toast.info(`Wylogowano automatycznie po ${minutes} min bezczynności.`);
       } catch {
         // ignore
       }
@@ -26,7 +32,7 @@ export function useIdleTimeout(enabled: boolean) {
 
     const reset = () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(logout, IDLE_MS);
+      timerRef.current = setTimeout(logout, idleMs);
     };
 
     EVENTS.forEach((ev) => window.addEventListener(ev, reset, { passive: true }));
@@ -36,5 +42,5 @@ export function useIdleTimeout(enabled: boolean) {
       if (timerRef.current) clearTimeout(timerRef.current);
       EVENTS.forEach((ev) => window.removeEventListener(ev, reset));
     };
-  }, [enabled]);
+  }, [enabled, idleMs]);
 }

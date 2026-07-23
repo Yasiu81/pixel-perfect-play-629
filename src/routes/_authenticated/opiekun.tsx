@@ -43,6 +43,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useOfflineSync } from "@/hooks/useOfflineSync";
+import { useIdleTimeout } from "@/hooks/use-idle-timeout";
 import { runOrQueue, type DbOp } from "@/lib/offlineQueue";
 
 export const Route = createFileRoute("/_authenticated/opiekun")({
@@ -228,6 +229,12 @@ function OpiekunApp() {
   const [showNotifs, setShowNotifs] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const { isOnline, pendingCount, syncing, syncNow } = useOfflineSync();
+
+  // Opiekunka pracuje w terenie z telefonem w kieszeni/torbie i długo nie
+  // dotyka ekranu podczas realnej opieki nad seniorem — 3-minutowy limit
+  // (właściwy dla biurka koordynatora) powodował tu częste, uciążliwe
+  // wylogowania w trakcie pracy. Tu zostaje dłuższy, 20-minutowy limit.
+  useIdleTimeout(true, 20 * 60 * 1000);
 
   const { data: user } = useQuery({
     queryKey: ["me"],

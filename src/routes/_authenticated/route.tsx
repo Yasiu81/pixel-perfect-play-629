@@ -1,6 +1,5 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
-import { useIdleTimeout } from "@/hooks/use-idle-timeout";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -13,6 +12,5 @@ export const Route = createFileRoute("/_authenticated")({
 });
 
 function AuthenticatedLayout() {
-  useIdleTimeout(true);
   return <Outlet />;
 }

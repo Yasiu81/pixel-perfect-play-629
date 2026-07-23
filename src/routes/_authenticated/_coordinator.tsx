@@ -4,6 +4,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { CoordinatorSidebar } from "@/components/CoordinatorSidebar";
 import { NotificationBell } from "@/components/NotificationBell";
 import { useAuth } from "@/hooks/use-auth";
+import { useIdleTimeout } from "@/hooks/use-idle-timeout";
 import { Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/_coordinator")({
@@ -13,6 +14,10 @@ export const Route = createFileRoute("/_authenticated/_coordinator")({
 function CoordinatorLayout() {
   const { loading, role } = useAuth();
   const navigate = useNavigate();
+
+  // Panel koordynatora: komputer biurowy, dane wrażliwe (PESEL, finanse) —
+  // zostaje krótki, 3-minutowy limit bezczynności (RODO).
+  useIdleTimeout(true, 3 * 60 * 1000);
 
   useEffect(() => {
     if (!loading && role && role !== "coordinator") {
